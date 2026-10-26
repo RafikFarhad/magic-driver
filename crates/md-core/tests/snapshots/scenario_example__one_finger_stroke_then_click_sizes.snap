@@ -1,0 +1,13 @@
+---
+source: crates/md-core/tests/scenario_example.rs
+expression: "render_timeline(parsed.iter().map(|(t, bytes)|\n(*t, (bytes[0], bytes[1], bytes.len()))))"
+---
+         0 (18, 0, 22)
+     11111 (18, 0, 30)
+     22222 (18, 0, 30)
+     33333 (18, 0, 30)
+     44444 (18, 0, 30)
+     55555 (18, 0, 30)
+     66666 (18, 0, 22)
+     77777 (18, 1, 22)
+     88888 (18, 0, 22)

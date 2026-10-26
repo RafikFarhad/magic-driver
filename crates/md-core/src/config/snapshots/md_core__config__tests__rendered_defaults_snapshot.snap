@@ -1,0 +1,45 @@
+---
+source: crates/md-core/src/config/tests.rs
+expression: "Config::default().render()"
+---
+version = 1
+
+[pointer]
+middle_click = true
+
+[scroll]
+enabled = true
+horizontal = true
+axis_lock = true
+acceleration = "medium"
+
+[touch]
+palm_rejection = "medium"
+
+[gestures]
+swipe_desktops = true
+double_tap_overview = true
+smart_zoom = false
+
+[log]
+level = "info"
+
+[advanced.scroll]
+gain_min = 1.0
+gain_max = 2.5
+gain_speed_mm_s = [20.0, 250.0]
+cancel_hold_ms = 60
+
+[advanced.touch]
+promote_distance_mm = 1.5
+promote_window_ms = 150
+rest_dwell_ms = 300
+palm_size_mm = 20.0
+rear_zone = 0.35
+mouse_motion_threshold = 150.0
+click_guard_ms = 100
+
+[advanced.gestures]
+kwin_swipe_fingers = 4
+double_tap_ms = 300
+swipe_distance_mm = 8.0

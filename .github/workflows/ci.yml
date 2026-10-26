@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container:
+      image: rust:1.98.1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse to run with input device nodes visible
+        run: |
+          set -eu
+          for node in /dev/uinput /dev/input /dev/hidraw*; do
+            if [ -e "$node" ]; then
+              echo "input device node $node is visible to tests" >&2
+              exit 1
+            fi
+          done
+
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      - name: Run scripts/check.sh
+        run: scripts/check.sh
