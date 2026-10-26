@@ -42,6 +42,8 @@ pub enum Command {
         file: PathBuf,
         #[arg(long, help = "Drive real virtual devices")]
         emit: bool,
+        #[arg(long, help = "Print outputs as JSON lines")]
+        json: bool,
     },
     #[command(about = "Validate or print the configuration")]
     Config {
@@ -111,7 +113,7 @@ mod tests {
 
     #[test]
     fn all_architecture_subcommands_parse() {
-        let cases: [&[&str]; 11] = [
+        let cases: [&[&str]; 13] = [
             &["run"],
             &["run", "--debug"],
             &["status"],
@@ -119,6 +121,8 @@ mod tests {
             &["record", "out.rec"],
             &["replay", "in.rec"],
             &["replay", "in.rec", "--emit"],
+            &["replay", "in.rec", "--json"],
+            &["replay", "--json", "in.rec"],
             &["config", "test"],
             &["config", "defaults"],
             &["trace"],
@@ -139,6 +143,20 @@ mod tests {
                 command: ConfigCommand::Test { path: Some(_) }
             })
         ));
+    }
+
+    #[test]
+    fn replay_takes_a_file_and_flags() {
+        let cli = parse(&["replay", "x.rec", "--json"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Replay {
+                emit: false,
+                json: true,
+                ..
+            })
+        ));
+        assert!(parse(&["replay"]).is_err());
     }
 
     #[test]

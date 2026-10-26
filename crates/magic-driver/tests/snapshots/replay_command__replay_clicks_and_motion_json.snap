@@ -1,0 +1,17 @@
+---
+source: crates/magic-driver/tests/replay_command.rs
+expression: result.stdout
+---
+{"t":0,"type":"pointer_motion","dx":3,"dy":-2}
+{"t":11111,"type":"pointer_motion","dx":-40,"dy":25}
+{"t":55555,"type":"button","button":"left","pressed":true}
+{"t":77777,"type":"button","button":"left","pressed":false}
+{"t":99999,"type":"button","button":"right","pressed":true}
+{"t":111110,"type":"button","button":"right","pressed":false}
+{"t":122221,"type":"button","button":"middle","pressed":true}
+{"t":133332,"type":"pointer_motion","dx":1,"dy":1}
+{"t":144443,"type":"button","button":"middle","pressed":false}
+{"t":155554,"type":"button","button":"right","pressed":true}
+{"t":166665,"type":"button","button":"right","pressed":false}
+{"t":177776,"type":"button","button":"left","pressed":true}
+{"t":188887,"type":"button","button":"left","pressed":false}

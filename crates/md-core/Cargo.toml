@@ -15,6 +15,7 @@ toml.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+proptest.workspace = true
 md-core = { path = ".", features = ["test-support"] }
 
 [lints]

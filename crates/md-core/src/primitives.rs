@@ -1,6 +1,8 @@
 use std::fmt;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
+use serde::Serialize;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Micros(u64);
 
@@ -68,13 +70,24 @@ impl SubAssign for Micros {
     }
 }
 
+impl fmt::Display for Button {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Button::Left => "left",
+            Button::Right => "right",
+            Button::Middle => "middle",
+        })
+    }
+}
+
 impl fmt::Display for Micros {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}us", self.0)
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Button {
     Left,
     Right,
@@ -127,5 +140,12 @@ mod tests {
         assert!(Micros::new(1) < Micros::new(2));
         assert_eq!(Micros::default(), Micros::ZERO);
         assert_eq!(Micros::new(42).to_string(), "42us");
+    }
+
+    #[test]
+    fn buttons_display_in_lowercase() {
+        assert_eq!(Button::Left.to_string(), "left");
+        assert_eq!(Button::Right.to_string(), "right");
+        assert_eq!(Button::Middle.to_string(), "middle");
     }
 }

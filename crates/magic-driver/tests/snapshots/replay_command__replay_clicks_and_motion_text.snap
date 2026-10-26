@@ -1,0 +1,17 @@
+---
+source: crates/magic-driver/tests/replay_command.rs
+expression: result.stdout
+---
+0 pointer dx=3 dy=-2
+11111 pointer dx=-40 dy=25
+55555 button left press
+77777 button left release
+99999 button right press
+111110 button right release
+122221 button middle press
+133332 pointer dx=1 dy=1
+144443 button middle release
+155554 button right press
+166665 button right release
+177776 button left press
+188887 button left release

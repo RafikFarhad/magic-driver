@@ -1,14 +1,17 @@
 mod cli;
 mod config_file;
+mod replay;
 
 use std::env;
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Parser;
 
 use crate::cli::{Cli, Command, ConfigCommand};
 use crate::config_file::{ConfigLocation, LoadOutcome, default_config_path, format_diagnostic};
+use crate::replay::ReplayFormat;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -22,6 +25,19 @@ fn main() -> ExitCode {
         Some(Command::Config {
             command: ConfigCommand::Defaults,
         }) => config_defaults(),
+        Some(Command::Replay { emit: true, .. }) => not_implemented("replay --emit"),
+        Some(Command::Replay {
+            file,
+            emit: false,
+            json,
+        }) => replay_command(
+            &file,
+            if json {
+                ReplayFormat::Json
+            } else {
+                ReplayFormat::Text
+            },
+        ),
         Some(command) => not_implemented(command.name()),
         None => ExitCode::FAILURE,
     }
@@ -30,6 +46,33 @@ fn main() -> ExitCode {
 fn not_implemented(name: &str) -> ExitCode {
     eprintln!("magic-driver {name}: not implemented");
     ExitCode::FAILURE
+}
+
+fn replay_command(path: &Path, format: ReplayFormat) -> ExitCode {
+    let source = match replay::open_recording(path) {
+        Ok(source) => source,
+        Err(error) => {
+            eprintln!("error: {}: {error}", path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let stdout = io::stdout().lock();
+    match replay::replay(source, format, io::BufWriter::new(stdout)) {
+        Ok(summary) => {
+            eprintln!(
+                "magic-driver: replayed {} reports ({} ignored, {} malformed), {} outputs",
+                summary.stats.reports,
+                summary.stats.ignored,
+                summary.stats.malformed,
+                summary.outputs
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: {}: {error}", path.display());
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn config_defaults() -> ExitCode {

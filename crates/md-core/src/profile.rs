@@ -57,6 +57,13 @@ pub struct SurfaceGeometry {
     pub raw_y_inverted: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ButtonZones {
+    pub middle_start: i32,
+    pub middle_stop: i32,
+    pub firm_touch_size: u8,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Profile {
     pub id: &'static str,
@@ -64,6 +71,7 @@ pub struct Profile {
     pub hid: HidIdentity,
     pub report: ReportLayout,
     pub surface: SurfaceGeometry,
+    pub buttons: ButtonZones,
     pub touch_size_scale: i32,
     pub default_palm_size_mm: f64,
     pub default_mouse_motion_threshold: f64,
@@ -98,6 +106,11 @@ pub const MAGIC_MOUSE_2_BT: Profile = Profile {
             increases_toward: SurfaceDirection::Rear,
         },
         raw_y_inverted: true,
+    },
+    buttons: ButtonZones {
+        middle_start: -350,
+        middle_stop: 350,
+        firm_touch_size: 8,
     },
     touch_size_scale: 4,
     default_palm_size_mm: 20.0,
@@ -172,6 +185,13 @@ mod tests {
         assert!(surface.raw_y_inverted);
         assert_eq!(surface.x.increases_toward, SurfaceDirection::Right);
         assert_eq!(surface.y.increases_toward, SurfaceDirection::Rear);
+    }
+
+    #[test]
+    fn button_zones_match_reference() {
+        let buttons = MAGIC_MOUSE_2_BT.buttons;
+        assert_eq!((buttons.middle_start, buttons.middle_stop), (-350, 350));
+        assert_eq!(buttons.firm_touch_size, 8);
     }
 
     #[test]
