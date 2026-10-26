@@ -1,0 +1,97 @@
+P: /devices/pci0000:00/0000:00:08.1/0000:c5:00.3/usb1/1-2/1-2.3/1-2.3:1.0/bluetooth/hci0/hci0:256/0005:004C:0269.0006/hidraw/hidraw5
+M: hidraw5
+R: 5
+J: c243:5
+U: hidraw
+D: c 243:5
+N: hidraw5
+L: 0
+E: DEVPATH=/devices/pci0000:00/0000:00:08.1/0000:c5:00.3/usb1/1-2/1-2.3/1-2.3:1.0/bluetooth/hci0/hci0:256/0005:004C:0269.0006/hidraw/hidraw5
+E: DEVNAME=/dev/hidraw5
+E: MAJOR=243
+E: MINOR=5
+E: SUBSYSTEM=hidraw
+E: USEC_INITIALIZED=812345678
+E: ID_FOR_SEAT=hidraw-pci-0000_c5_00_3-usb-0_2_3_1_0
+E: TAGS=:seat:
+E: CURRENT_TAGS=:seat:
+
+P: /devices/pci0000:00/0000:00:08.1/0000:c5:00.3/usb1/1-2/1-2.3/1-2.3:1.0/bluetooth/hci0/hci0:256/0005:004C:0269.0006
+M: 0005:004C:0269.0006
+R: 0006
+J: +hid:0005:004C:0269.0006
+U: hid
+V: magicmouse
+E: DEVPATH=/devices/pci0000:00/0000:00:08.1/0000:c5:00.3/usb1/1-2/1-2.3/1-2.3:1.0/bluetooth/hci0/hci0:256/0005:004C:0269.0006
+E: DRIVER=magicmouse
+E: HID_ID=0005:0000004C:00000269
+E: HID_NAME=Magic Mouse
+E: HID_PHYS=00:00:00:00:00:01
+E: HID_UNIQ=00:00:00:00:00:02
+E: MODALIAS=hid:b0005g0001v0000004Cp00000269
+E: SUBSYSTEM=hid
+
+P: /devices/pci0000:00/0000:00:08.1/0000:c5:00.3/usb1/1-2/1-2.3/1-2.3:1.0/bluetooth/hci0/hci0:256/0005:004C:0269.0006/input/input21
+M: input21
+R: 21
+J: +input:input21
+U: input
+E: DEVPATH=/devices/pci0000:00/0000:00:08.1/0000:c5:00.3/usb1/1-2/1-2.3/1-2.3:1.0/bluetooth/hci0/hci0:256/0005:004C:0269.0006/input/input21
+E: PRODUCT=5/4c/269/7f
+E: NAME="Magic Mouse"
+E: PHYS="00:00:00:00:00:01"
+E: UNIQ="00:00:00:00:00:02"
+E: PROP=0
+E: EV=17
+E: KEY=70000 0 0 0 0
+E: REL=903
+E: MSC=10
+E: MODALIAS=input:b0005v004Cp0269e007F-e0,1,2,3,4,k110,111,112,r0,1,6,8,B,C,a2F,35,36,39,am4,lsfw
+E: SUBSYSTEM=input
+E: USEC_INITIALIZED=812345901
+E: ID_INPUT=1
+E: ID_INPUT_MOUSE=1
+E: ID_BUS=bluetooth
+E: ID_FOR_SEAT=input-pci-0000_c5_00_3-usb-0_2_3_1_0
+E: TAGS=:seat:
+E: CURRENT_TAGS=:seat:
+
+P: /devices/pci0000:00/0000:00:08.1/0000:c5:00.3/usb1/1-2/1-2.3/1-2.3:1.0/bluetooth/hci0/hci0:256/0005:004C:0269.0006/input/input21/event16
+M: event16
+R: 16
+J: c13:80
+U: input
+D: c 13:80
+N: input/event16
+L: 0
+E: DEVPATH=/devices/pci0000:00/0000:00:08.1/0000:c5:00.3/usb1/1-2/1-2.3/1-2.3:1.0/bluetooth/hci0/hci0:256/0005:004C:0269.0006/input/input21/event16
+E: DEVNAME=/dev/input/event16
+E: MAJOR=13
+E: MINOR=80
+E: SUBSYSTEM=input
+E: USEC_INITIALIZED=812346012
+E: ID_INPUT=1
+E: ID_INPUT_MOUSE=1
+E: ID_BUS=bluetooth
+E: LIBINPUT_DEVICE_GROUP=5/4c/269:00:00:00:00:00:01
+E: TAGS=:power-switch:
+E: CURRENT_TAGS=:power-switch:
+
+P: /devices/pci0000:00/0000:00:08.1/0000:c5:00.3/usb1/1-2/1-2.3/1-2.3:1.0/bluetooth/hci0/hci0:256/0005:004C:0269.0006/input/input21/mouse1
+M: mouse1
+R: 1
+J: c13:33
+U: input
+D: c 13:33
+N: input/mouse1
+L: 0
+E: DEVPATH=/devices/pci0000:00/0000:00:08.1/0000:c5:00.3/usb1/1-2/1-2.3/1-2.3:1.0/bluetooth/hci0/hci0:256/0005:004C:0269.0006/input/input21/mouse1
+E: DEVNAME=/dev/input/mouse1
+E: MAJOR=13
+E: MINOR=33
+E: SUBSYSTEM=input
+E: USEC_INITIALIZED=812346003
+E: ID_INPUT=1
+E: ID_INPUT_MOUSE=1
+E: ID_BUS=bluetooth
+

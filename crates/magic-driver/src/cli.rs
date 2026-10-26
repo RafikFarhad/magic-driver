@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use md_core::Mode;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -30,6 +31,8 @@ pub enum Command {
     Run {
         #[arg(long, help = "Enable the decision trace")]
         debug: bool,
+        #[arg(long, value_enum, help = "Prototype touch output mode")]
+        mode: Option<RunMode>,
     },
     #[command(about = "Print detected mice and session state")]
     Status,
@@ -57,6 +60,22 @@ pub enum Command {
         #[arg(long, value_name = "FILE", help = "Inspect a recording offline")]
         replay: Option<PathBuf>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum RunMode {
+    RawForward,
+    ScrollProbe,
+}
+
+impl RunMode {
+    pub fn engine_mode(mode: Option<RunMode>) -> Mode {
+        match mode {
+            None => Mode::PointerOnly,
+            Some(RunMode::RawForward) => Mode::RawForward,
+            Some(RunMode::ScrollProbe) => Mode::ScrollProbe,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -113,9 +132,12 @@ mod tests {
 
     #[test]
     fn all_architecture_subcommands_parse() {
-        let cases: [&[&str]; 13] = [
+        let cases: [&[&str]; 16] = [
             &["run"],
             &["run", "--debug"],
+            &["run", "--mode", "raw-forward"],
+            &["run", "--mode", "scroll-probe"],
+            &["run", "--debug", "--mode", "raw-forward"],
             &["status"],
             &["doctor"],
             &["record", "out.rec"],
@@ -157,6 +179,19 @@ mod tests {
             })
         ));
         assert!(parse(&["replay"]).is_err());
+    }
+
+    #[test]
+    fn run_mode_selects_the_engine_mode() {
+        let mode = |args: &[&str]| match parse(args).unwrap().command {
+            Some(Command::Run { mode, .. }) => RunMode::engine_mode(mode),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(mode(&["run"]), Mode::PointerOnly);
+        assert_eq!(mode(&["run", "--mode", "raw-forward"]), Mode::RawForward);
+        assert_eq!(mode(&["run", "--mode", "scroll-probe"]), Mode::ScrollProbe);
+        assert!(parse(&["run", "--mode", "pointer-only"]).is_err());
+        assert!(parse(&["run", "--mode", "normal"]).is_err());
     }
 
     #[test]

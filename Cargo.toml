@@ -12,13 +12,16 @@ publish = false
 md-core = { path = "crates/md-core" }
 md-trace = { path = "crates/md-trace" }
 clap = { version = "4.6", features = ["derive"] }
+evdev = "0.13.2"
 insta = "1.49"
+nix = { version = "0.29", features = ["event", "fs", "poll", "signal", "time"] }
 proptest = "1.11"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3"
 thiserror = "2.0"
 toml = "1.1"
+udev = "0.9.3"
 
 [workspace.lints.rust]
 unused_qualifications = "warn"

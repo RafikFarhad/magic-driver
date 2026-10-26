@@ -22,6 +22,12 @@ jobs:
             fi
           done
 
+      - name: Install libudev headers
+        run: |
+          set -eu
+          apt-get update
+          apt-get install -y --no-install-recommends libudev-dev pkg-config
+
       - name: Install the pinned toolchain
         run: rustup toolchain install
 

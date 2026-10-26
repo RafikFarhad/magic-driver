@@ -7,10 +7,13 @@ publish.workspace = true
 
 [dependencies]
 clap.workspace = true
+evdev.workspace = true
 md-core.workspace = true
+nix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+udev.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

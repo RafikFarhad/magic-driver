@@ -1,0 +1,9 @@
+ACTION=="remove", GOTO="magic_driver_end"
+
+SUBSYSTEM=="hidraw", KERNELS=="0005:004C:0269.*", TAG+="uaccess"
+SUBSYSTEM=="input", KERNEL=="event*", KERNELS=="0005:004C:0269.*", TAG+="uaccess"
+SUBSYSTEM=="misc", KERNEL=="uinput", OPTIONS+="static_node=uinput", TAG+="uaccess"
+
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="magic-driver touchpad", ATTRS{id/bustype}=="0006", ATTRS{id/vendor}=="4d44", ATTRS{id/product}=="0002", ENV{ID_INPUT_TOUCHPAD_INTEGRATION}="external"
+
+LABEL="magic_driver_end"

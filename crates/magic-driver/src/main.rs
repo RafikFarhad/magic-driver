@@ -1,15 +1,23 @@
 mod cli;
 mod config_file;
+mod discovery;
+mod io;
+mod record;
 mod replay;
+mod runtime;
+mod session;
+mod status;
+#[cfg(test)]
+mod udev_rule_tests;
 
 use std::env;
-use std::io;
+use std::io::{BufWriter, stdout};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Parser;
 
-use crate::cli::{Cli, Command, ConfigCommand};
+use crate::cli::{Cli, Command, ConfigCommand, RunMode};
 use crate::config_file::{ConfigLocation, LoadOutcome, default_config_path, format_diagnostic};
 use crate::replay::ReplayFormat;
 
@@ -38,8 +46,56 @@ fn main() -> ExitCode {
                 ReplayFormat::Text
             },
         ),
+        Some(Command::Run { debug, mode }) => run_command(RunMode::engine_mode(mode), debug),
+        Some(Command::Status) => status_command(),
+        Some(Command::Record { file }) => record_command(&file),
         Some(command) => not_implemented(command.name()),
         None => ExitCode::FAILURE,
+    }
+}
+
+fn run_command(mode: md_core::Mode, debug: bool) -> ExitCode {
+    match runtime::linux::run(mode, debug) {
+        Ok(signal) => {
+            eprintln!(
+                "magic-driver: stopped{}",
+                signal.map_or(String::new(), |signal| format!(" by {signal:?}"))
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn status_command() -> ExitCode {
+    match status::collect() {
+        Ok(report) => {
+            print!("{}", report.render());
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: cannot read the udev device list: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn record_command(path: &Path) -> ExitCode {
+    match record::run(path) {
+        Ok(reports) => {
+            eprintln!(
+                "magic-driver: recorded {reports} reports to {}",
+                path.display()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -56,8 +112,8 @@ fn replay_command(path: &Path, format: ReplayFormat) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let stdout = io::stdout().lock();
-    match replay::replay(source, format, io::BufWriter::new(stdout)) {
+    let stdout = stdout().lock();
+    match replay::replay(source, format, BufWriter::new(stdout)) {
         Ok(summary) => {
             eprintln!(
                 "magic-driver: replayed {} reports ({} ignored, {} malformed), {} outputs",
