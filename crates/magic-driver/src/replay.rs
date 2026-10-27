@@ -34,6 +34,8 @@ pub enum ReplayError {
     Write(#[from] io::Error),
 }
 
+const MAX_TIMERS_BETWEEN_REPORTS: usize = 16;
+
 #[derive(Serialize)]
 struct JsonLine<'a> {
     t: u64,
@@ -60,7 +62,7 @@ pub fn replay<R: BufRead, W: Write>(
     let profile_id = &reader.header().profile_id;
     let profile = Profile::by_id(profile_id)
         .ok_or_else(|| ReplayError::UnknownProfile(profile_id.clone()))?;
-    let mut engine = Engine::new(profile, Config::for_profile(profile), Mode::PointerOnly);
+    let mut engine = Engine::new(profile, Config::for_profile(profile), Mode::Normal);
     let mut outputs = Vec::new();
     let mut summary = ReplaySummary::default();
     let mut result = Ok(());
@@ -72,16 +74,64 @@ pub fn replay<R: BufRead, W: Write>(
                 break;
             }
         };
+        fire_deadlines(
+            &mut engine,
+            Some(t),
+            &mut outputs,
+            &mut out,
+            format,
+            &mut summary,
+        )?;
         engine.handle(Input::Report { t, bytes: &bytes }, &mut outputs);
-        for output in &outputs {
-            write_output(&mut out, format, t, output)?;
-        }
-        summary.outputs += outputs.len() as u64;
-        outputs.clear();
+        write_outputs(&mut out, format, t, &mut outputs, &mut summary)?;
     }
+    fire_deadlines(
+        &mut engine,
+        None,
+        &mut outputs,
+        &mut out,
+        format,
+        &mut summary,
+    )?;
     out.flush()?;
     summary.stats = engine.stats();
     result.map(|()| summary)
+}
+
+fn fire_deadlines<W: Write>(
+    engine: &mut Engine,
+    before: Option<Micros>,
+    outputs: &mut Vec<Output>,
+    out: &mut W,
+    format: ReplayFormat,
+    summary: &mut ReplaySummary,
+) -> Result<(), ReplayError> {
+    for _ in 0..MAX_TIMERS_BETWEEN_REPORTS {
+        let Some(deadline) = engine
+            .next_deadline()
+            .filter(|deadline| before.is_none_or(|before| *deadline < before))
+        else {
+            break;
+        };
+        engine.handle(Input::Timer { t: deadline }, outputs);
+        write_outputs(out, format, deadline, outputs, summary)?;
+    }
+    Ok(())
+}
+
+fn write_outputs<W: Write>(
+    out: &mut W,
+    format: ReplayFormat,
+    t: Micros,
+    outputs: &mut Vec<Output>,
+    summary: &mut ReplaySummary,
+) -> Result<(), ReplayError> {
+    for output in outputs.iter() {
+        write_output(out, format, t, output)?;
+    }
+    summary.outputs += outputs.len() as u64;
+    outputs.clear();
+    Ok(())
 }
 
 fn write_output<W: Write>(

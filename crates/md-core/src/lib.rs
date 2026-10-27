@@ -2,11 +2,13 @@
 
 mod bounded;
 pub mod buttons;
+pub mod classify;
 pub mod config;
 pub mod context;
 pub mod engine;
 mod primitives;
 pub mod profile;
+pub mod recognise;
 pub mod recording;
 pub mod report;
 pub mod surface;

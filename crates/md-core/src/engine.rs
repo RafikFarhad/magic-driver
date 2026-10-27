@@ -4,16 +4,19 @@ use serde::Serialize;
 
 use crate::Micros;
 use crate::buttons::{ButtonEdge, Buttons};
+use crate::classify::Classifier;
 use crate::config::Config;
 use crate::context::Context;
 use crate::primitives::Button;
 use crate::profile::Profile;
+use crate::recognise::Recogniser;
 use crate::report::{self, Report};
 use crate::synth::{Frame, RawForward, ScrollProbe};
 use crate::tracker::Tracker;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Mode {
+    Normal,
     PointerOnly,
     RawForward,
     ScrollProbe,
@@ -61,6 +64,7 @@ enum TouchOutput {
     None,
     RawForward(RawForward),
     ScrollProbe(ScrollProbe),
+    Normal(Box<ScrollPath>),
 }
 
 impl TouchOutput {
@@ -69,14 +73,30 @@ impl TouchOutput {
             Mode::PointerOnly => TouchOutput::None,
             Mode::RawForward => TouchOutput::RawForward(RawForward::new(profile.surface)),
             Mode::ScrollProbe => TouchOutput::ScrollProbe(ScrollProbe::new(profile.surface)),
+            Mode::Normal => TouchOutput::Normal(Box::new(ScrollPath::new(profile))),
         }
     }
 
-    fn update(&mut self, tracker: &Tracker) -> Option<Frame> {
+    fn update(
+        &mut self,
+        t: Micros,
+        tracker: &Tracker,
+        context: &Context,
+        profile: &Profile,
+        config: &Config,
+    ) -> Option<Frame> {
         match self {
             TouchOutput::None => None,
             TouchOutput::RawForward(raw) => raw.update(tracker),
             TouchOutput::ScrollProbe(probe) => probe.update(tracker),
+            TouchOutput::Normal(path) => path.update(t, tracker, context, profile, config),
+        }
+    }
+
+    fn next_deadline(&self, config: &Config) -> Option<Micros> {
+        match self {
+            TouchOutput::Normal(path) => path.next_deadline(config),
+            TouchOutput::None | TouchOutput::RawForward(_) | TouchOutput::ScrollProbe(_) => None,
         }
     }
 
@@ -85,6 +105,7 @@ impl TouchOutput {
             TouchOutput::None => None,
             TouchOutput::RawForward(raw) => raw.lift_all(),
             TouchOutput::ScrollProbe(probe) => probe.lift_all(),
+            TouchOutput::Normal(path) => path.lift_all(),
         }
     }
 }
@@ -120,14 +141,14 @@ impl Engine {
     pub fn handle(&mut self, input: Input<'_>, out: &mut Vec<Output>) {
         match input {
             Input::Report { t, bytes } => self.handle_report(t, bytes, out),
-            Input::Timer { .. } => {}
+            Input::Timer { t } => self.handle_timer(t, out),
             Input::ConfigChanged(config) => self.config = config,
             Input::Reset => self.reset(out),
         }
     }
 
     pub fn next_deadline(&self) -> Option<Micros> {
-        None
+        self.touch_output.next_deadline(&self.config)
     }
 
     pub fn set_tracing(&mut self, enabled: bool) {
@@ -162,6 +183,33 @@ impl Engine {
         &self.context
     }
 
+    pub const fn scroll_path(&self) -> Option<&ScrollPath> {
+        match &self.touch_output {
+            TouchOutput::Normal(path) => Some(path),
+            TouchOutput::None | TouchOutput::RawForward(_) | TouchOutput::ScrollProbe(_) => None,
+        }
+    }
+
+    pub fn classifier(&self) -> Option<&Classifier> {
+        self.scroll_path().map(ScrollPath::classifier)
+    }
+
+    pub fn recogniser(&self) -> Option<&Recogniser> {
+        self.scroll_path().map(ScrollPath::recogniser)
+    }
+
+    fn handle_timer(&mut self, t: Micros, out: &mut Vec<Output>) {
+        if self.next_deadline().is_none_or(|deadline| deadline > t) {
+            return;
+        }
+        if let Some(frame) =
+            self.touch_output
+                .update(t, &self.tracker, &self.context, self.profile, &self.config)
+        {
+            out.push(Output::TouchFrame(frame));
+        }
+    }
+
     fn handle_report(&mut self, t: Micros, bytes: &[u8], out: &mut Vec<Output>) {
         self.stats.reports += 1;
         let report = match report::parse(self.profile, bytes) {
@@ -178,7 +226,13 @@ impl Engine {
         self.pointer(t, &report, out);
         if report.has_touch_area() {
             self.tracker.update(t, &report.touches);
-            if let Some(frame) = self.touch_output.update(&self.tracker) {
+            if let Some(frame) = self.touch_output.update(
+                t,
+                &self.tracker,
+                &self.context,
+                self.profile,
+                &self.config,
+            ) {
                 out.push(Output::TouchFrame(frame));
             }
         }
@@ -226,6 +280,10 @@ impl Engine {
         self.context.reset();
     }
 }
+
+mod normal;
+
+pub use normal::ScrollPath;
 
 #[cfg(test)]
 mod tests;

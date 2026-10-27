@@ -31,7 +31,11 @@ pub enum Command {
     Run {
         #[arg(long, help = "Enable the decision trace")]
         debug: bool,
-        #[arg(long, value_enum, help = "Prototype touch output mode")]
+        #[arg(
+            long,
+            value_enum,
+            help = "Diagnostic touch output mode instead of the scroll path"
+        )]
         mode: Option<RunMode>,
     },
     #[command(about = "Print detected mice and session state")]
@@ -71,7 +75,7 @@ pub enum RunMode {
 impl RunMode {
     pub fn engine_mode(mode: Option<RunMode>) -> Mode {
         match mode {
-            None => Mode::PointerOnly,
+            None => Mode::Normal,
             Some(RunMode::RawForward) => Mode::RawForward,
             Some(RunMode::ScrollProbe) => Mode::ScrollProbe,
         }
@@ -187,7 +191,8 @@ mod tests {
             Some(Command::Run { mode, .. }) => RunMode::engine_mode(mode),
             other => panic!("{other:?}"),
         };
-        assert_eq!(mode(&["run"]), Mode::PointerOnly);
+        assert_eq!(mode(&["run"]), Mode::Normal);
+        assert_eq!(mode(&["run", "--debug"]), Mode::Normal);
         assert_eq!(mode(&["run", "--mode", "raw-forward"]), Mode::RawForward);
         assert_eq!(mode(&["run", "--mode", "scroll-probe"]), Mode::ScrollProbe);
         assert!(parse(&["run", "--mode", "pointer-only"]).is_err());

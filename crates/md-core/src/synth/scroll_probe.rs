@@ -1,11 +1,10 @@
 use crate::profile::SurfaceGeometry;
 use crate::surface::{SurfacePoint, SurfacePointMm};
+use crate::synth::SCROLL_FINGER_SPACING_MM;
 use crate::synth::frame::{
     Contact, Frame, TouchpadGeometry, TouchpadPoint, TrackingIds, VIRTUAL_TOUCHPAD,
 };
 use crate::tracker::{TrackId, Tracker};
-
-pub const SCROLL_PROBE_FINGER_SPACING_MM: f64 = 20.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Followed {
@@ -79,9 +78,7 @@ impl ScrollProbe {
         let to = self.surface.to_mm(pos);
         let delta = SurfacePointMm::new(to.x - from.x, to.y - from.y);
         let centre = self.touchpad.centre();
-        let half = self
-            .touchpad
-            .mm_to_units(SCROLL_PROBE_FINGER_SPACING_MM / 2.0);
+        let half = self.touchpad.mm_to_units(SCROLL_FINGER_SPACING_MM / 2.0);
         let starts = [
             TouchpadPoint {
                 x: centre.x - half,

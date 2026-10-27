@@ -80,7 +80,12 @@ fn parse_does_not_allocate() {
 fn engine_reuses_the_output_vector_in_every_mode() {
     let session = synthetic_session(2_000);
     let extra = malformed_and_ignored();
-    for mode in [Mode::PointerOnly, Mode::RawForward, Mode::ScrollProbe] {
+    for mode in [
+        Mode::Normal,
+        Mode::PointerOnly,
+        Mode::RawForward,
+        Mode::ScrollProbe,
+    ] {
         let mut engine = Engine::new(&MAGIC_MOUSE_2_BT, Config::default(), mode);
         let mut out: Vec<Output> = Vec::with_capacity(16);
         let config = Config::default();

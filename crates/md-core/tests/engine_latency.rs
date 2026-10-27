@@ -29,7 +29,12 @@ fn percentile(sorted: &[Duration], percent: usize) -> Duration {
 
 #[test]
 fn p99_per_report_is_well_under_one_millisecond() {
-    for mode in [Mode::PointerOnly, Mode::RawForward, Mode::ScrollProbe] {
+    for mode in [
+        Mode::Normal,
+        Mode::PointerOnly,
+        Mode::RawForward,
+        Mode::ScrollProbe,
+    ] {
         let durations = per_report_durations(mode);
         let p50 = percentile(&durations, 50);
         let p99 = percentile(&durations, 99);

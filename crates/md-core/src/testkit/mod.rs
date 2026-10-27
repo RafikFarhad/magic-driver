@@ -1,4 +1,5 @@
 mod report_builder;
+pub mod scenarios;
 mod stream;
 mod timeline;
 

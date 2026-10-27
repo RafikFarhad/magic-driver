@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 use crate::Micros;
 use crate::profile::SurfaceGeometry;
 use crate::report::{Touch, TouchState};
@@ -8,7 +10,7 @@ pub const VELOCITY_WINDOW: Micros = Micros::from_millis(50);
 
 const VELOCITY_SAMPLES: usize = 8;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct TrackId(u64);
 
 impl TrackId {

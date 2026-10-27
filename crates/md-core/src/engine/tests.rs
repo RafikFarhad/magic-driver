@@ -3,7 +3,7 @@ use std::fmt::Write as _;
 use super::*;
 use crate::config::Config;
 use crate::profile::MAGIC_MOUSE_2_BT;
-use crate::synth::{SCROLL_PROBE_FINGER_SPACING_MM, TOUCHPAD_SLOTS, VIRTUAL_TOUCHPAD};
+use crate::synth::{SCROLL_FINGER_SPACING_MM, TOUCHPAD_SLOTS, VIRTUAL_TOUCHPAD};
 use crate::testkit::{ReportBuilder, TouchRecord, touch_state};
 use crate::tracker::Phase;
 
@@ -97,7 +97,12 @@ fn movement_passes_through_unchanged() {
         .iter()
         .map(|(dx, dy)| motion(i32::from(*dx), i32::from(*dy)))
         .collect();
-    for mode in [Mode::PointerOnly, Mode::RawForward, Mode::ScrollProbe] {
+    for mode in [
+        Mode::Normal,
+        Mode::PointerOnly,
+        Mode::RawForward,
+        Mode::ScrollProbe,
+    ] {
         let mut engine = engine(mode);
         let pointer: Vec<Output> = outputs(&mut engine, &reports)
             .into_iter()
@@ -350,11 +355,113 @@ fn short_reports_carry_pointer_and_buttons_but_leave_tracks_alone() {
 
 #[test]
 fn timers_and_deadlines_are_idle() {
-    let mut engine = engine(Mode::ScrollProbe);
+    for mode in [
+        Mode::Normal,
+        Mode::PointerOnly,
+        Mode::RawForward,
+        Mode::ScrollProbe,
+    ] {
+        let mut engine = engine(mode);
+        assert_eq!(engine.next_deadline(), None, "{mode:?}");
+        let mut out = Vec::new();
+        engine.handle(Input::Timer { t: Micros::MAX }, &mut out);
+        assert!(out.is_empty(), "{mode:?}");
+    }
+}
+
+fn normal_stroke() -> Vec<ReportBuilder> {
+    let mut reports =
+        vec![ReportBuilder::new().touch(finger(2, -100, 600).state(touch_state::START))];
+    for step in 1..=6 {
+        reports.push(ReportBuilder::new().touch(finger(2, -100, 600 - step * 40)));
+    }
+    reports
+}
+
+#[test]
+fn normal_mode_scrolls_a_deliberate_finger_and_lifts_on_release() {
+    let mut engine = engine(Mode::Normal);
+    let mut reports = normal_stroke();
+    reports.push(ReportBuilder::new().touch(finger(2, -100, 360).state(touch_state::LIFT_50)));
+    let got = outputs(&mut engine, &reports);
+    let frames = frames(&got);
+    assert!(frames.len() >= 3);
+    assert!(
+        frames[..frames.len() - 1]
+            .iter()
+            .all(|frame| frame.contact_count() == 2)
+    );
+    assert_eq!(*frames.last().unwrap(), Frame::EMPTY);
     assert_eq!(engine.next_deadline(), None);
+}
+
+#[test]
+fn normal_mode_timer_before_the_deadline_does_nothing() {
+    let mut engine = engine(Mode::Normal);
+    let _ = outputs(&mut engine, &normal_stroke());
     let mut out = Vec::new();
-    engine.handle(Input::Timer { t: Micros::MAX }, &mut out);
+    let press = ReportBuilder::new()
+        .left(true)
+        .touch(finger(2, -100, 360))
+        .build();
+    let t = Micros::new(7 * FRAME);
+    engine.handle(Input::Report { t, bytes: &press }, &mut out);
+    assert_eq!(out, vec![button(Button::Middle, true)]);
+    let deadline = engine.next_deadline().unwrap();
+    assert_eq!(deadline, t + Micros::from_millis(60));
+    out.clear();
+    engine.handle(
+        Input::Timer {
+            t: deadline - Micros::new(1),
+        },
+        &mut out,
+    );
     assert!(out.is_empty());
+    engine.handle(Input::Timer { t: deadline }, &mut out);
+    assert_eq!(out, vec![Output::TouchFrame(Frame::EMPTY)]);
+    assert_eq!(engine.next_deadline(), None);
+}
+
+#[test]
+fn normal_mode_reset_lifts_the_stroke_and_clears_deadlines() {
+    let mut engine = engine(Mode::Normal);
+    let _ = outputs(&mut engine, &normal_stroke());
+    let mut out = Vec::new();
+    let press = ReportBuilder::new()
+        .left(true)
+        .touch(finger(2, -100, 360))
+        .build();
+    engine.handle(
+        Input::Report {
+            t: Micros::new(7 * FRAME),
+            bytes: &press,
+        },
+        &mut out,
+    );
+    assert!(engine.next_deadline().is_some());
+    assert_eq!(
+        reset(&mut engine),
+        vec![
+            button(Button::Middle, false),
+            Output::TouchFrame(Frame::EMPTY)
+        ]
+    );
+    assert_eq!(engine.next_deadline(), None);
+    assert_eq!(
+        engine.recogniser().unwrap().state(),
+        crate::recognise::RecogniserState::Idle
+    );
+    assert!(reset(&mut engine).is_empty());
+}
+
+#[test]
+fn only_normal_mode_exposes_the_scroll_path() {
+    assert!(engine(Mode::Normal).scroll_path().is_some());
+    assert!(engine(Mode::Normal).classifier().is_some());
+    for mode in [Mode::PointerOnly, Mode::RawForward, Mode::ScrollProbe] {
+        assert!(engine(mode).scroll_path().is_none(), "{mode:?}");
+        assert!(engine(mode).recogniser().is_none(), "{mode:?}");
+    }
 }
 
 #[test]
@@ -580,7 +687,7 @@ fn scroll_probe_turns_one_finger_into_two_side_by_side() {
         if let (Some(a), Some(b)) = (frame.slots[0], frame.slots[1]) {
             assert_eq!(
                 b.x - a.x,
-                VIRTUAL_TOUCHPAD.mm_to_units(SCROLL_PROBE_FINGER_SPACING_MM)
+                VIRTUAL_TOUCHPAD.mm_to_units(SCROLL_FINGER_SPACING_MM)
             );
             assert_eq!(a.y, b.y);
         }
@@ -600,7 +707,7 @@ fn scroll_probe_starts_at_the_centre_and_follows_the_finger_delta() {
     );
     let frames = frames(&got);
     let centre = VIRTUAL_TOUCHPAD.centre();
-    let half = VIRTUAL_TOUCHPAD.mm_to_units(SCROLL_PROBE_FINGER_SPACING_MM / 2.0);
+    let half = VIRTUAL_TOUCHPAD.mm_to_units(SCROLL_FINGER_SPACING_MM / 2.0);
     let start = frames[0];
     assert_eq!(start.slots[0].unwrap().x, centre.x - half);
     assert_eq!(start.slots[1].unwrap().x, centre.x + half);
