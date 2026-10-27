@@ -1,8 +1,7 @@
 use std::fmt::Write as _;
 
 use evdev::{EventType, KeyCode, RelativeAxisCode, SynchronizationCode};
-use md_core::profile::Profile;
-use md_core::report::{self, ReportFormat};
+use md_core::report;
 use md_core::{Button, Micros, Output};
 
 use crate::io::EvdevEvent;
@@ -168,30 +167,6 @@ pub fn render_stock_events(t: Micros, events: &[EvdevEvent]) -> String {
     line
 }
 
-pub fn render_report(profile: &Profile, t: Micros, bytes: &[u8], outputs: &[Output]) -> String {
-    let mut line = format!("{} hidraw", t.as_u64());
-    let _ = match report::parse(profile, bytes) {
-        Ok(report) => write!(
-            line,
-            " clicks={} dx={} dy={} touches={}{}",
-            report.header.clicks,
-            report.header.dx,
-            report.header.dy,
-            report.touches.len(),
-            if report.format == ReportFormat::Short {
-                " short"
-            } else {
-                ""
-            }
-        ),
-        Err(error) => write!(line, " {error}"),
-    };
-    for output in outputs {
-        let _ = write!(line, " | {output}");
-    }
-    line
-}
-
 pub struct LogObserver {
     debug: bool,
     cross_check: CrossCheck,
@@ -266,16 +241,19 @@ impl SessionObserver for LogObserver {
                 "retrying takeover of {} after: {cause}",
                 nodes.hidraw.display()
             ),
-            SessionEvent::Report { t, bytes, outputs } => {
+            SessionEvent::Report { bytes, outputs, .. } => {
                 if !self.debug {
                     return;
                 }
-                let profile = &md_core::profile::MAGIC_MOUSE_2_BT;
-                if let Ok(report) = report::parse(profile, bytes) {
+                if let Ok(report) = report::parse(&md_core::profile::MAGIC_MOUSE_2_BT, bytes) {
                     self.cross_check
                         .on_hidraw(report.header.dx, report.header.dy, outputs);
                 }
-                tracing::debug!("{}", render_report(profile, *t, bytes, outputs));
+            }
+            SessionEvent::Trace { record } => {
+                if self.debug {
+                    tracing::debug!("{record}");
+                }
             }
             SessionEvent::StockEvents { t, events } => {
                 if !self.debug {
@@ -293,7 +271,7 @@ mod tests {
     use std::path::PathBuf;
 
     use md_core::profile::MAGIC_MOUSE_2_BT;
-    use md_core::testkit::{ReportBuilder, TouchRecord};
+    use md_core::testkit::ReportBuilder;
     use nix::errno::Errno;
 
     use tracing::Level;
@@ -375,30 +353,6 @@ mod tests {
         assert_eq!(line, "42 stock REL_X=3 right=1 2:11=120 SYN");
     }
 
-    #[test]
-    fn reports_render_header_and_outputs() {
-        let bytes = ReportBuilder::new()
-            .motion(2, -1)
-            .left(true)
-            .touch(TouchRecord::new(1, -700, 0).size(12))
-            .build();
-        let line = render_report(
-            &MAGIC_MOUSE_2_BT,
-            Micros::new(7),
-            &bytes,
-            &[
-                Output::PointerMotion { dx: 2, dy: -1 },
-                press(Button::Left, true),
-            ],
-        );
-        assert_eq!(
-            line,
-            "7 hidraw clicks=1 dx=2 dy=-1 touches=1 | pointer dx=2 dy=-1 | button left press"
-        );
-        let short = render_report(&MAGIC_MOUSE_2_BT, Micros::new(8), &[0x10, 1, 2], &[]);
-        assert!(short.starts_with("8 hidraw "));
-    }
-
     fn nodes() -> MouseNodes {
         MouseNodes {
             key: PathBuf::from("/sys/devices/x/0005:004C:0269.0001"),
@@ -445,7 +399,6 @@ mod tests {
                     attempts: 2,
                 },
                 SessionEvent::Report {
-                    t: Micros::new(1),
                     bytes: &bytes,
                     outputs: &[],
                 },
@@ -485,7 +438,6 @@ mod tests {
                     attempts: 1,
                 },
                 SessionEvent::Report {
-                    t: Micros::new(1),
                     bytes: &bytes,
                     outputs: &[Output::PointerMotion { dx: 1, dy: 1 }],
                 },
@@ -503,13 +455,24 @@ mod tests {
                 },
             ],
         );
-        assert_eq!(records.len(), 5, "{records:?}");
+        assert_eq!(records.len(), 4, "{records:?}");
         assert!(records[0].message.ends_with("1 attempt"));
         let debug = at(&records, Level::DEBUG);
-        assert!(debug[0].starts_with("1 hidraw clicks=0 dx=1 dy=1"));
-        assert_eq!(debug[1], "2 stock REL_X=1 REL_Y=1 SYN");
-        assert!(debug[2].starts_with("cross-check: hidraw reports=1 dx=1 dy=1"));
-        assert!(debug[2].ends_with("motion match | buttons match"));
+        assert_eq!(debug[0], "2 stock REL_X=1 REL_Y=1 SYN");
+        assert!(debug[1].starts_with("cross-check: hidraw reports=1 dx=1 dy=1"));
+        assert!(debug[1].ends_with("motion match | buttons match"));
+    }
+
+    #[test]
+    fn debug_prints_every_trace_record_as_a_text_line() {
+        let record = md_trace::TraceRecord::Recogniser(md_trace::RecogniserRecord {
+            t: 9,
+            from: md_trace::GestureState::Idle,
+            to: md_trace::GestureState::Swipe,
+        });
+        let records = render(true, &[SessionEvent::Trace { record: &record }]);
+        assert_eq!(at(&records, Level::DEBUG), ["9 recogniser idle -> swipe"]);
+        assert!(render(false, &[SessionEvent::Trace { record: &record }]).is_empty());
     }
 
     #[test]

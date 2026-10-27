@@ -4,14 +4,20 @@ use crate::config::Config;
 use crate::context::Context;
 use crate::profile::Profile;
 use crate::recognise::{Intent, Recogniser, RecogniserSettings};
-use crate::synth::{Frame, ScrollSettings, ScrollSynth};
+use crate::synth::{
+    Frame, SCRIPT_FRAME_INTERVAL, ScrollSettings, ScrollSynth, SwipeSynth, SwipeUpScript,
+    TrackingIds,
+};
 use crate::tracker::Tracker;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScrollPath {
     classifier: Classifier,
     recogniser: Recogniser,
-    synth: ScrollSynth,
+    scroll: ScrollSynth,
+    swipe: SwipeSynth,
+    script: Option<SwipeUpScript>,
+    tracking_ids: TrackingIds,
     intent: Intent,
 }
 
@@ -20,7 +26,10 @@ impl ScrollPath {
         ScrollPath {
             classifier: Classifier::new(),
             recogniser: Recogniser::new(),
-            synth: ScrollSynth::new(profile.surface),
+            scroll: ScrollSynth::new(profile.surface),
+            swipe: SwipeSynth::new(profile.surface),
+            script: None,
+            tracking_ids: TrackingIds::default(),
             intent: Intent::None,
         }
     }
@@ -53,20 +62,74 @@ impl ScrollPath {
             tracker,
             &self.classifier,
             context,
-            RecogniserSettings {
-                scroll_enabled: config.scroll.enabled,
-                cancel_hold: Micros::from_millis(u64::from(config.advanced.scroll.cancel_hold_ms)),
-            },
+            &RecogniserSettings::from_config(config, profile),
         );
-        self.synth.update(
-            t,
-            self.intent,
-            tracker,
-            ScrollSettings {
-                gain: config.advanced.scroll.gain_min,
-                horizontal: config.scroll.horizontal,
-            },
-        )
+        self.synthesise(t, tracker, context, config)
+    }
+
+    fn synthesise(
+        &mut self,
+        t: Micros,
+        tracker: &Tracker,
+        context: &Context,
+        config: &Config,
+    ) -> Option<Frame> {
+        if let Some(script) = self.script.as_mut() {
+            if context.is_button_down() && !script.is_cancelled_or_lifting() {
+                let hold = Micros::from_millis(u64::from(config.advanced.scroll.cancel_hold_ms));
+                script.cancel(t + hold);
+            }
+            let frame = script.update(t, &mut self.tracking_ids);
+            if script.is_done() {
+                self.script = None;
+            }
+            return frame;
+        }
+        let fingers = usize::from(config.advanced.gestures.kwin_swipe_fingers);
+        match self.intent {
+            Intent::Overview => {
+                let lifted = self.lift_strokes();
+                let start = if lifted.is_some() {
+                    t + SCRIPT_FRAME_INTERVAL
+                } else {
+                    t
+                };
+                let mut script = SwipeUpScript::new(start, fingers);
+                let frame = lifted.or_else(|| script.update(t, &mut self.tracking_ids));
+                self.script = Some(script);
+                frame
+            }
+            Intent::Swipe { .. } => {
+                if let Some(lift) = self.scroll.lift_all() {
+                    return Some(lift);
+                }
+                self.swipe
+                    .update(t, self.intent, tracker, &mut self.tracking_ids, fingers)
+            }
+            Intent::Freeze if self.swipe.is_active() => {
+                self.swipe
+                    .update(t, self.intent, tracker, &mut self.tracking_ids, fingers)
+            }
+            Intent::None => self.lift_strokes(),
+            Intent::Freeze | Intent::Hold | Intent::Scroll { .. } => {
+                if let Some(lift) = self.swipe.lift_all() {
+                    return Some(lift);
+                }
+                self.scroll.update(
+                    t,
+                    self.intent,
+                    tracker,
+                    &mut self.tracking_ids,
+                    &ScrollSettings::from_config(config),
+                )
+            }
+        }
+    }
+
+    fn lift_strokes(&mut self) -> Option<Frame> {
+        let scroll = self.scroll.lift_all();
+        let swipe = self.swipe.lift_all();
+        scroll.or(swipe)
     }
 
     pub fn next_deadline(&self, config: &Config) -> Option<Micros> {
@@ -76,16 +139,22 @@ impl ScrollPath {
         } else {
             None
         };
-        match (classifier, self.recogniser.next_deadline()) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        [
+            classifier,
+            self.recogniser.next_deadline(),
+            self.script.and_then(|script| script.next_deadline()),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     pub fn lift_all(&mut self) -> Option<Frame> {
         self.classifier.reset();
         self.recogniser.reset();
         self.intent = Intent::None;
-        self.synth.lift_all()
+        let script = self.script.take().and_then(|mut script| script.lift_all());
+        let strokes = self.lift_strokes();
+        script.or(strokes)
     }
 }

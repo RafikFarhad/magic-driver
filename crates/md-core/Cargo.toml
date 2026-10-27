@@ -9,11 +9,13 @@ publish.workspace = true
 test-support = []
 
 [dependencies]
+md-trace.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 insta.workspace = true
 proptest.workspace = true
 md-core = { path = ".", features = ["test-support"] }

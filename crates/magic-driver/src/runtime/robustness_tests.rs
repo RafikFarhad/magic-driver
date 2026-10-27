@@ -542,6 +542,7 @@ fn replay_through_the_runtime(
     let fixture = synthetic_fixture();
     let mut harness = Harness::new(Some(Duration::from_secs(2)));
     let mut observer = LogObserver::new(debug);
+    harness.runtime.set_tracing(debug);
     capture_at(level, || {
         harness
             .world
@@ -603,10 +604,16 @@ fn debug_mode_logs_one_line_per_report_at_debug_level() {
                     .split(' ')
                     .next()
                     .is_some_and(|t| t.parse::<u64>().is_ok())
-                && record.message.split(' ').nth(1) == Some("hidraw")
+                && record.message.split(' ').nth(1) == Some("report")
         })
         .count();
     assert_eq!(reports, 2_000);
+    assert!(
+        records
+            .iter()
+            .filter(|record| record.message.split(' ').nth(1) == Some("report"))
+            .all(|record| record.message.contains(" ns"))
+    );
     let info = records
         .iter()
         .filter(|record| record.level == Level::INFO)

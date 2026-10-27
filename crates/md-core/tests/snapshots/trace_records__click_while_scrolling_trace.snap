@@ -1,0 +1,115 @@
+---
+source: crates/md-core/tests/trace_records.rs
+expression: "text(&traced(&scenarios::click_while_scrolling()))"
+---
+0 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,600 0x30 44x36]
+0 track 0 (touch 1) candidate -> rejected: palm
+11111 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,576 0x40 44x36]
+22222 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,552 0x40 44x36]
+33333 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,528 0x40 44x36]
+44444 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,504 0x40 44x36]
+55555 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,480 0x40 44x36]
+55555 track 1 (touch 2) candidate -> deliberate: promoted
+55555 recogniser idle -> scroll
+55555 output frame 0:0@7600,8000 1:1@8400,8000
+66666 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,456 0x40 44x36]
+66666 output frame 0:0@7600,7985 1:1@8400,7985
+77777 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,432 0x40 44x36]
+77777 output frame 0:0@7600,7971 1:1@8400,7971
+88888 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,408 0x40 44x36]
+88888 output frame 0:0@7600,7956 1:1@8400,7956
+99999 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,384 0x40 44x36]
+99999 output frame 0:0@7600,7942 1:1@8400,7942
+111110 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,360 0x40 44x36]
+111110 output frame 0:0@7600,7927 1:1@8400,7927
+122221 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,336 0x40 44x36]
+122221 output frame 0:0@7600,7913 1:1@8400,7913
+133332 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,312 0x40 44x36]
+133332 output frame 0:0@7600,7898 1:1@8400,7898
+144443 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,288 0x40 44x36]
+144443 output frame 0:0@7600,7884 1:1@8400,7884
+155554 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,264 0x40 44x36]
+155554 output frame 0:0@7600,7869 1:1@8400,7869
+166665 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,240 0x40 44x36]
+166665 output frame 0:0@7600,7855 1:1@8400,7855
+177776 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,216 0x40 44x36]
+177776 output frame 0:0@7600,7840 1:1@8400,7840
+188887 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,192 0x40 44x36]
+188887 output frame 0:0@7600,7825 1:1@8400,7825
+199998 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,168 0x40 44x36]
+199998 output frame 0:0@7600,7811 1:1@8400,7811
+211109 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,144 0x40 44x36]
+211109 output frame 0:0@7600,7796 1:1@8400,7796
+222220 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,120 0x40 44x36]
+222220 output frame 0:0@7600,7782 1:1@8400,7782
+233331 report clicks=1 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,96 0x40 44x36]
+233331 output button left press
+233331 track 1 (touch 2) deliberate -> rejected: click guard
+233331 recogniser scroll -> cancelling
+244442 report clicks=1 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,72 0x40 44x36]
+255553 report clicks=1 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,48 0x40 44x36]
+266664 report clicks=1 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,24 0x40 44x36]
+277775 report clicks=1 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,0 0x40 44x36]
+288886 report clicks=1 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-24 0x40 44x36]
+293331 recogniser cancelling -> suppressed
+293331 output frame lifted
+299997 report clicks=1 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-48 0x40 44x36]
+311108 report clicks=1 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-72 0x40 44x36]
+322219 report clicks=1 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-96 0x40 44x36]
+333330 report clicks=1 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-120 0x40 44x36]
+344441 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-144 0x40 44x36]
+344441 output button left release
+355552 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-168 0x40 44x36]
+366663 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-192 0x40 44x36]
+377774 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-216 0x40 44x36]
+388885 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-240 0x40 44x36]
+399996 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-264 0x40 44x36]
+411107 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-288 0x40 44x36]
+422218 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-312 0x40 44x36]
+433329 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-336 0x40 44x36]
+444440 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-360 0x40 44x36]
+455551 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,-360 0x50 44x36]
+455551 recogniser suppressed -> idle
+477773 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,600 0x30 44x36]
+488884 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,576 0x40 44x36]
+499995 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,552 0x40 44x36]
+511106 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,528 0x40 44x36]
+522217 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,504 0x40 44x36]
+533328 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,480 0x40 44x36]
+533328 track 2 (touch 2) candidate -> deliberate: promoted
+533328 recogniser idle -> scroll
+533328 output frame 0:2@7600,8000 1:3@8400,8000
+544439 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,456 0x40 44x36]
+544439 output frame 0:2@7600,7985 1:3@8400,7985
+555550 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,432 0x40 44x36]
+555550 output frame 0:2@7600,7971 1:3@8400,7971
+566661 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,408 0x40 44x36]
+566661 output frame 0:2@7600,7956 1:3@8400,7956
+577772 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,384 0x40 44x36]
+577772 output frame 0:2@7600,7942 1:3@8400,7942
+588883 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,360 0x40 44x36]
+588883 output frame 0:2@7600,7927 1:3@8400,7927
+599994 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,336 0x40 44x36]
+599994 output frame 0:2@7600,7913 1:3@8400,7913
+611105 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,312 0x40 44x36]
+611105 output frame 0:2@7600,7898 1:3@8400,7898
+622216 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,288 0x40 44x36]
+622216 output frame 0:2@7600,7884 1:3@8400,7884
+633327 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,264 0x40 44x36]
+633327 output frame 0:2@7600,7869 1:3@8400,7869
+644438 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,240 0x40 44x36]
+644438 output frame 0:2@7600,7855 1:3@8400,7855
+655549 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,216 0x40 44x36]
+655549 output frame 0:2@7600,7840 1:3@8400,7840
+666660 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,192 0x40 44x36]
+666660 output frame 0:2@7600,7825 1:3@8400,7825
+677771 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,168 0x40 44x36]
+677771 output frame 0:2@7600,7811 1:3@8400,7811
+688882 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,144 0x40 44x36]
+688882 output frame 0:2@7600,7796 1:3@8400,7796
+699993 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,120 0x40 44x36]
+699993 output frame 0:2@7600,7782 1:3@8400,7782
+711104 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,120 0x50 44x36]
+711104 recogniser scroll -> idle
+711104 output frame lifted
+722215 report clicks=0 dx=0 dy=0 touches=2 [1 100,1700 0x40 170x140] [2 -100,120 0x00 44x36]

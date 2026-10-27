@@ -447,10 +447,7 @@ fn normal_mode_reset_lifts_the_stroke_and_clears_deadlines() {
         ]
     );
     assert_eq!(engine.next_deadline(), None);
-    assert_eq!(
-        engine.recogniser().unwrap().state(),
-        crate::recognise::RecogniserState::Idle
-    );
+    assert_eq!(engine.recogniser().unwrap().state(), RecogniserState::Idle);
     assert!(reset(&mut engine).is_empty());
 }
 
@@ -570,7 +567,7 @@ fn raw_forward_maps_each_contact_to_its_own_slot() {
     let frames = frames(
         &timeline
             .iter()
-            .map(|(_, output)| *output)
+            .map(|(_, output)| output.clone())
             .collect::<Vec<_>>(),
     );
     assert_slots_pair(&frames);
@@ -678,7 +675,7 @@ fn reset_lifts_every_slot() {
 fn scroll_probe_turns_one_finger_into_two_side_by_side() {
     let mut engine = engine(Mode::ScrollProbe);
     let timeline = feed(&mut engine, &stroke(2));
-    let all: Vec<Output> = timeline.iter().map(|(_, output)| *output).collect();
+    let all: Vec<Output> = timeline.iter().map(|(_, output)| output.clone()).collect();
     let frames = frames(&all);
     assert_slots_pair(&frames);
     for frame in &frames {

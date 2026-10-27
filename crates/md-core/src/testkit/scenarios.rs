@@ -6,6 +6,7 @@ use crate::testkit::stream::SYNTHETIC_REPORT_INTERVAL_US;
 pub const PALM_ID: u8 = 1;
 pub const FINGER_ID: u8 = 2;
 pub const GRIP_ID: u8 = 3;
+pub const SECOND_FINGER_ID: u8 = 4;
 
 pub fn palm() -> TouchRecord {
     TouchRecord::new(PALM_ID, 100, 1_700)
@@ -23,6 +24,13 @@ pub fn grip() -> TouchRecord {
 
 pub fn finger(x: i32, y: i32) -> TouchRecord {
     TouchRecord::new(FINGER_ID, x, y)
+        .touch_major(44)
+        .touch_minor(36)
+        .size(12)
+}
+
+pub fn second_finger(x: i32, y: i32) -> TouchRecord {
+    TouchRecord::new(SECOND_FINGER_ID, x, y)
         .touch_major(44)
         .touch_minor(36)
         .size(12)
@@ -73,6 +81,75 @@ impl Scenario {
         }
         self.push(with(background).touch(finger(x, y).state(touch_state::LIFT_50)));
         self.push(with(background).touch(finger(x, y).state(touch_state::GONE)));
+        self
+    }
+
+    pub fn two_finger_stroke(
+        &mut self,
+        background: &[TouchRecord],
+        starts: [(i32, i32); 2],
+        steps: &[(i32, i32)],
+    ) -> &mut Scenario {
+        let [(mut ax, mut ay), (mut bx, mut by)] = starts;
+        self.push(
+            with(background)
+                .touch(finger(ax, ay).state(touch_state::START))
+                .touch(second_finger(bx, by).state(touch_state::START)),
+        );
+        for (dx, dy) in steps {
+            ax += dx;
+            ay += dy;
+            bx += dx;
+            by += dy;
+            self.push(
+                with(background)
+                    .touch(finger(ax, ay))
+                    .touch(second_finger(bx, by)),
+            );
+        }
+        self.push(
+            with(background)
+                .touch(finger(ax, ay).state(touch_state::LIFT_50))
+                .touch(second_finger(bx, by).state(touch_state::LIFT_50)),
+        );
+        self.push(with(background));
+        self
+    }
+
+    pub fn two_finger_tap(
+        &mut self,
+        background: &[TouchRecord],
+        frames: usize,
+        left: bool,
+    ) -> &mut Scenario {
+        let a = finger(-400, 200);
+        let b = second_finger(200, 200);
+        self.push(
+            with(background)
+                .touch(a.state(touch_state::START))
+                .touch(b.state(touch_state::START)),
+        );
+        for frame in 0..frames {
+            let jitter = i32::try_from(frame % 3).unwrap_or(0) - 1;
+            self.push(
+                with(background)
+                    .left(left)
+                    .touch(TouchRecord {
+                        x: a.x + jitter,
+                        ..a
+                    })
+                    .touch(TouchRecord {
+                        y: b.y + jitter,
+                        ..b
+                    }),
+            );
+        }
+        self.push(
+            with(background)
+                .touch(a.state(touch_state::LIFT_50))
+                .touch(b.state(touch_state::LIFT_50)),
+        );
+        self.push(with(background));
         self
     }
 
@@ -212,7 +289,7 @@ pub fn click_middle() -> Scenario {
 pub fn slow_scroll() -> Scenario {
     let mut scenario = Scenario::new();
     scenario.push(ReportBuilder::new().touch(palm()));
-    scenario.stroke(&[palm()], (-100, 600), &[(0, -24); 90]);
+    scenario.stroke(&[palm()], (-100, 600), &[(0, -12); 180]);
     scenario.repeat(5, &ReportBuilder::new().touch(palm()));
     scenario
 }
@@ -294,6 +371,102 @@ pub fn scroll_after_flick() -> Scenario {
     scenario
 }
 
+pub fn diagonal_drift() -> Scenario {
+    let mut scenario = Scenario::new();
+    scenario.push(ReportBuilder::new().touch(palm()));
+    scenario.stroke(&[palm()], (-600, 700), &[(6, -30); 60]);
+    scenario.repeat(5, &ReportBuilder::new().touch(palm()));
+    scenario
+}
+
+pub fn horizontal_drift() -> Scenario {
+    let mut scenario = Scenario::new();
+    scenario.push(ReportBuilder::new().touch(palm()));
+    scenario.stroke(&[palm()], (-900, 0), &[(20, 6); 60]);
+    scenario.repeat(5, &ReportBuilder::new().touch(palm()));
+    scenario
+}
+
+pub fn two_finger_swipe_steps(dx: i32) -> Vec<(i32, i32)> {
+    let mut steps = vec![(dx / 4, 0), (dx / 2, 1)];
+    steps.extend([(dx, 0), (dx, -1)].repeat(9));
+    steps
+}
+
+pub fn two_finger_swipe() -> Scenario {
+    let mut scenario = Scenario::new();
+    scenario.push(ReportBuilder::new().touch(palm()));
+    scenario.two_finger_stroke(
+        &[palm()],
+        [(-500, 200), (100, 200)],
+        &two_finger_swipe_steps(40),
+    );
+    scenario.repeat(5, &ReportBuilder::new().touch(palm()));
+    scenario
+}
+
+pub fn two_finger_swipe_left() -> Scenario {
+    let mut scenario = Scenario::new();
+    scenario.push(ReportBuilder::new().touch(palm()));
+    scenario.two_finger_stroke(
+        &[palm()],
+        [(0, 200), (600, 200)],
+        &two_finger_swipe_steps(-40),
+    );
+    scenario.repeat(5, &ReportBuilder::new().touch(palm()));
+    scenario
+}
+
+pub fn two_finger_vertical() -> Scenario {
+    let mut scenario = Scenario::new();
+    scenario.push(ReportBuilder::new().touch(palm()));
+    scenario.two_finger_stroke(&[palm()], [(-500, 600), (100, 600)], &[(0, -40); 20]);
+    scenario.repeat(5, &ReportBuilder::new().touch(palm()));
+    scenario
+}
+
+pub fn two_finger_tap_gap(scenario: &mut Scenario, frames: usize) {
+    scenario.repeat(frames, &ReportBuilder::new().touch(palm()));
+}
+
+pub fn two_finger_double_tap() -> Scenario {
+    let mut scenario = Scenario::new();
+    scenario.push(ReportBuilder::new().touch(palm()));
+    scenario.two_finger_tap(&[palm()], 6, false);
+    two_finger_tap_gap(&mut scenario, 12);
+    scenario.two_finger_tap(&[palm()], 6, false);
+    scenario.repeat(30, &ReportBuilder::new().touch(palm()));
+    scenario
+}
+
+pub fn two_finger_single_tap() -> Scenario {
+    let mut scenario = Scenario::new();
+    scenario.push(ReportBuilder::new().touch(palm()));
+    scenario.two_finger_tap(&[palm()], 6, false);
+    scenario.repeat(60, &ReportBuilder::new().touch(palm()));
+    scenario
+}
+
+pub fn two_finger_tap_with_click() -> Scenario {
+    let mut scenario = Scenario::new();
+    scenario.push(ReportBuilder::new().touch(palm()));
+    scenario.two_finger_tap(&[palm()], 6, false);
+    two_finger_tap_gap(&mut scenario, 12);
+    scenario.two_finger_tap(&[palm()], 6, true);
+    scenario.repeat(30, &ReportBuilder::new().touch(palm()));
+    scenario
+}
+
+pub fn two_finger_slow_second_tap() -> Scenario {
+    let mut scenario = Scenario::new();
+    scenario.push(ReportBuilder::new().touch(palm()));
+    scenario.two_finger_tap(&[palm()], 6, false);
+    two_finger_tap_gap(&mut scenario, 40);
+    scenario.two_finger_tap(&[palm()], 6, false);
+    scenario.repeat(30, &ReportBuilder::new().touch(palm()));
+    scenario
+}
+
 pub fn all() -> Vec<(&'static str, Scenario)> {
     vec![
         ("idle-resting-palm", idle_resting_palm()),
@@ -307,6 +480,15 @@ pub fn all() -> Vec<(&'static str, Scenario)> {
         ("click-while-scrolling", click_while_scrolling()),
         ("touch-after-flick", touch_after_flick()),
         ("scroll-after-flick", scroll_after_flick()),
+        ("diagonal-drift", diagonal_drift()),
+        ("horizontal-drift", horizontal_drift()),
+        ("two-finger-swipe", two_finger_swipe()),
+        ("two-finger-swipe-left", two_finger_swipe_left()),
+        ("two-finger-vertical", two_finger_vertical()),
+        ("two-finger-double-tap", two_finger_double_tap()),
+        ("two-finger-single-tap", two_finger_single_tap()),
+        ("two-finger-tap-with-click", two_finger_tap_with_click()),
+        ("two-finger-slow-second-tap", two_finger_slow_second_tap()),
     ]
 }
 

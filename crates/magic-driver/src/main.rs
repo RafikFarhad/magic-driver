@@ -11,6 +11,7 @@ mod runtime;
 mod service;
 mod session;
 mod status;
+mod trace;
 #[cfg(test)]
 mod udev_rule_tests;
 
@@ -54,6 +55,7 @@ fn main() -> ExitCode {
         Some(Command::Status) => status_command(),
         Some(Command::Doctor) => doctor_command(),
         Some(Command::Record { file }) => record_command(&file),
+        Some(Command::Trace) => trace_command(),
         Some(command) => not_implemented(command.name()),
         None => ExitCode::FAILURE,
     }
@@ -96,6 +98,23 @@ fn doctor_command() -> ExitCode {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
+    }
+}
+
+fn trace_command() -> ExitCode {
+    let path = match trace::server::socket_path(env::var_os("XDG_RUNTIME_DIR").as_deref()) {
+        Ok(path) => path,
+        Err(error) => {
+            eprintln!("error: cannot locate the trace socket: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match trace::client::run(&path, stdout().lock()) {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
     }
 }
 

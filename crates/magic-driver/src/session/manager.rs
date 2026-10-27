@@ -13,6 +13,7 @@ pub struct SessionManager<O: DeviceOpener> {
     config: Config,
     known: Vec<MouseNodes>,
     session: Option<Session<O>>,
+    tracing: bool,
 }
 
 impl<O: DeviceOpener> std::fmt::Debug for SessionManager<O> {
@@ -33,6 +34,7 @@ impl<O: DeviceOpener> SessionManager<O> {
             config,
             known: Vec::new(),
             session: None,
+            tracing: false,
         }
     }
 
@@ -43,6 +45,21 @@ impl<O: DeviceOpener> SessionManager<O> {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    pub fn set_tracing(&mut self, enabled: bool) {
+        self.tracing = enabled;
+        if let Some(session) = self.session.as_mut() {
+            session.set_tracing(enabled);
+        }
+    }
+
+    pub fn is_tracing(&self) -> bool {
+        self.tracing
+    }
+
+    pub fn profile(&self) -> Option<&'static md_core::profile::Profile> {
+        self.session.as_ref().map(|session| session.nodes().profile)
     }
 
     pub fn apply_config(
@@ -138,6 +155,7 @@ impl<O: DeviceOpener> SessionManager<O> {
 
     fn start(&mut self, now: Micros, nodes: MouseNodes, observer: &mut dyn SessionObserver) {
         let mut session = Session::new(nodes, self.mode, self.config.clone(), now);
+        session.set_tracing(self.tracing);
         session.on_timer(now, &mut self.opener, observer);
         self.session = Some(session);
     }

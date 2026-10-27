@@ -4,6 +4,9 @@ pub mod selfcheck;
 use std::fmt;
 use std::os::fd::BorrowedFd;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+use md_trace::TraceRecord;
 
 use md_core::config::Config;
 use md_core::{Engine, Input, Micros, Mode, Output};
@@ -154,13 +157,15 @@ pub enum SessionEvent<'a> {
         cause: DegradeCause,
     },
     Report {
-        t: Micros,
         bytes: &'a [u8],
         outputs: &'a [Output],
     },
     StockEvents {
         t: Micros,
         events: &'a [EvdevEvent],
+    },
+    Trace {
+        record: &'a TraceRecord,
     },
 }
 
@@ -271,6 +276,10 @@ impl<O: DeviceOpener> Session<O> {
 
     pub fn nodes(&self) -> &MouseNodes {
         &self.nodes
+    }
+
+    pub fn set_tracing(&mut self, enabled: bool) {
+        self.engine.set_tracing(enabled);
     }
 
     pub fn state(&self) -> SessionState {
@@ -461,6 +470,7 @@ impl<O: DeviceOpener> Session<O> {
                 Ok(None) => return,
                 Ok(Some(len)) => {
                     let before = self.engine.stats();
+                    let started = self.engine.is_tracing().then(Instant::now);
                     self.engine.handle(
                         Input::Report {
                             t: now,
@@ -468,6 +478,9 @@ impl<O: DeviceOpener> Session<O> {
                         },
                         &mut self.outputs,
                     );
+                    if let Some(started) = started {
+                        record_processing_time(&mut self.outputs, started.elapsed());
+                    }
                     let after = self.engine.stats();
                     let failure = if after.malformed > before.malformed {
                         self.self_check.on_malformed_report(now)
@@ -478,7 +491,6 @@ impl<O: DeviceOpener> Session<O> {
                         None
                     };
                     observer.observe(&SessionEvent::Report {
-                        t: now,
                         bytes: &self.report[..len],
                         outputs: &self.outputs,
                     });
@@ -539,6 +551,7 @@ impl<O: DeviceOpener> Session<O> {
             return false;
         };
         let result = write_outputs(devices, &self.outputs);
+        observe_traces(&self.outputs, observer);
         self.outputs.clear();
         if result.is_err() {
             self.degrade(now, DegradeCause::VirtualDeviceFailed, observer);
@@ -607,6 +620,7 @@ impl<O: DeviceOpener> Session<O> {
         for output in &self.outputs {
             let _ = write_output(&mut pointer, &mut touchpad, output);
         }
+        observe_traces(&self.outputs, observer);
         self.outputs.clear();
         VirtualTouchpad::destroy(touchpad);
         VirtualPointer::destroy(pointer);
@@ -615,6 +629,20 @@ impl<O: DeviceOpener> Session<O> {
             nodes: &self.nodes,
             reason,
         });
+    }
+}
+
+fn record_processing_time(outputs: &mut [Output], elapsed: Duration) {
+    if let Some(Output::Trace(TraceRecord::Report(report))) = outputs.first_mut() {
+        report.processing_ns = Some(u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX));
+    }
+}
+
+fn observe_traces(outputs: &[Output], observer: &mut dyn SessionObserver) {
+    for output in outputs {
+        if let Output::Trace(record) = output {
+            observer.observe(&SessionEvent::Trace { record });
+        }
     }
 }
 
@@ -682,6 +710,7 @@ fn write_output<P: VirtualPointer, T: VirtualTouchpad>(
         Output::PointerMotion { dx, dy } => pointer.motion(*dx, *dy),
         Output::Button { button, pressed } => pointer.button(*button, *pressed),
         Output::TouchFrame(frame) => touchpad.frame(frame),
+        Output::Trace(_) => Ok(()),
     }
 }
 

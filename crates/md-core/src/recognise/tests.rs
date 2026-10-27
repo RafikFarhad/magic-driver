@@ -117,7 +117,7 @@ fn one_deliberate_track_starts_a_scroll() {
 }
 
 #[test]
-fn two_deliberate_tracks_stay_idle_for_the_swipe_epic() {
+fn two_deliberate_tracks_moving_vertically_stay_idle() {
     let mut harness = Harness::new();
     let a = finger(-300, 600);
     let b = TouchRecord::new(4, 300, 600);

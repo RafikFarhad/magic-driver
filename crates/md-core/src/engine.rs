@@ -10,6 +10,7 @@ use crate::context::Context;
 use crate::primitives::Button;
 use crate::profile::Profile;
 use crate::recognise::Recogniser;
+use crate::recognise::RecogniserState;
 use crate::report::{self, Report};
 use crate::synth::{Frame, RawForward, ScrollProbe};
 use crate::tracker::Tracker;
@@ -30,12 +31,26 @@ pub enum Input<'a> {
     Reset,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Output {
-    PointerMotion { dx: i32, dy: i32 },
-    Button { button: Button, pressed: bool },
+    PointerMotion {
+        dx: i32,
+        dy: i32,
+    },
+    Button {
+        button: Button,
+        pressed: bool,
+    },
     TouchFrame(Frame),
+    #[serde(skip)]
+    Trace(md_trace::TraceRecord),
+}
+
+impl Output {
+    pub const fn is_trace(&self) -> bool {
+        matches!(self, Output::Trace(_))
+    }
 }
 
 impl fmt::Display for Output {
@@ -48,6 +63,7 @@ impl fmt::Display for Output {
                 if *pressed { "press" } else { "release" }
             ),
             Output::TouchFrame(frame) => write!(f, "{frame}"),
+            Output::Trace(record) => write!(f, "trace {record}"),
         }
     }
 }
@@ -198,21 +214,72 @@ impl Engine {
         self.scroll_path().map(ScrollPath::recogniser)
     }
 
+    fn emit(&self, t: Micros, output: Output, out: &mut Vec<Output>) {
+        let record = if self.tracing {
+            crate::trace::output_record(t, &output)
+        } else {
+            None
+        };
+        out.push(output);
+        if let Some(record) = record {
+            out.push(Output::Trace(record));
+        }
+    }
+
+    fn recogniser_state(&self) -> Option<RecogniserState> {
+        self.scroll_path().map(|path| path.recogniser().state())
+    }
+
+    fn update_touches(&mut self, t: Micros, out: &mut Vec<Output>) {
+        let before = if self.tracing {
+            self.recogniser_state()
+        } else {
+            None
+        };
+        let frame =
+            self.touch_output
+                .update(t, &self.tracker, &self.context, self.profile, &self.config);
+        if self.tracing {
+            self.trace_decisions(t, before, out);
+        }
+        if let Some(frame) = frame {
+            self.emit(t, Output::TouchFrame(frame), out);
+        }
+    }
+
+    fn trace_decisions(&self, t: Micros, before: Option<RecogniserState>, out: &mut Vec<Output>) {
+        let Some(path) = self.scroll_path() else {
+            return;
+        };
+        for decision in path.classifier().decisions() {
+            out.push(Output::Trace(crate::trace::decision_record(
+                t,
+                decision,
+                &self.tracker,
+            )));
+        }
+        let after = path.recogniser().state();
+        if let Some(before) = before.filter(|before| *before != after) {
+            out.push(Output::Trace(crate::trace::recogniser_record(
+                t, before, after,
+            )));
+        }
+    }
+
     fn handle_timer(&mut self, t: Micros, out: &mut Vec<Output>) {
         if self.next_deadline().is_none_or(|deadline| deadline > t) {
             return;
         }
-        if let Some(frame) =
-            self.touch_output
-                .update(t, &self.tracker, &self.context, self.profile, &self.config)
-        {
-            out.push(Output::TouchFrame(frame));
-        }
+        self.update_touches(t, out);
     }
 
     fn handle_report(&mut self, t: Micros, bytes: &[u8], out: &mut Vec<Output>) {
         self.stats.reports += 1;
-        let report = match report::parse(self.profile, bytes) {
+        let parsed = report::parse(self.profile, bytes);
+        if self.tracing {
+            out.push(Output::Trace(crate::trace::report_record(t, &parsed)));
+        }
+        let report = match parsed {
             Ok(report) => report,
             Err(error) => {
                 if error.is_malformed() {
@@ -226,25 +293,21 @@ impl Engine {
         self.pointer(t, &report, out);
         if report.has_touch_area() {
             self.tracker.update(t, &report.touches);
-            if let Some(frame) = self.touch_output.update(
-                t,
-                &self.tracker,
-                &self.context,
-                self.profile,
-                &self.config,
-            ) {
-                out.push(Output::TouchFrame(frame));
-            }
+            self.update_touches(t, out);
         }
     }
 
     fn pointer(&mut self, t: Micros, report: &Report, out: &mut Vec<Output>) {
         let header = report.header;
         if header.dx != 0 || header.dy != 0 {
-            out.push(Output::PointerMotion {
-                dx: header.dx,
-                dy: header.dy,
-            });
+            self.emit(
+                t,
+                Output::PointerMotion {
+                    dx: header.dx,
+                    dy: header.dy,
+                },
+                out,
+            );
         }
         self.context.on_motion(t, header.dx, header.dy);
         let edges = self.buttons.update(
@@ -260,21 +323,40 @@ impl Engine {
 
     fn emit_button(&mut self, t: Micros, edge: ButtonEdge, out: &mut Vec<Output>) {
         self.context.on_button(t, edge.button, edge.pressed);
-        out.push(Output::Button {
-            button: edge.button,
-            pressed: edge.pressed,
-        });
+        self.emit(
+            t,
+            Output::Button {
+                button: edge.button,
+                pressed: edge.pressed,
+            },
+            out,
+        );
     }
 
     fn reset(&mut self, out: &mut Vec<Output>) {
+        let t = Micros::ZERO;
+        let before = self.recogniser_state();
         for edge in &self.buttons.release_all() {
-            out.push(Output::Button {
-                button: edge.button,
-                pressed: edge.pressed,
-            });
+            self.emit(
+                t,
+                Output::Button {
+                    button: edge.button,
+                    pressed: edge.pressed,
+                },
+                out,
+            );
         }
         if let Some(frame) = self.touch_output.lift_all() {
-            out.push(Output::TouchFrame(frame));
+            self.emit(t, Output::TouchFrame(frame), out);
+        }
+        if self.tracing
+            && let Some(before) = before.filter(|state| *state != RecogniserState::Idle)
+        {
+            out.push(Output::Trace(crate::trace::recogniser_record(
+                t,
+                before,
+                RecogniserState::Idle,
+            )));
         }
         self.tracker.reset();
         self.context.reset();

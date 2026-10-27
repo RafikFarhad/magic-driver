@@ -15,6 +15,7 @@ pub mod surface;
 pub mod synth;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testkit;
+pub mod trace;
 pub mod tracker;
 
 pub use bounded::BoundedVec;

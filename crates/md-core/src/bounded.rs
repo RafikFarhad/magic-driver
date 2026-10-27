@@ -1,5 +1,5 @@
 use std::fmt;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct BoundedVec<T: Copy + Default, const N: usize> {
@@ -48,6 +48,12 @@ impl<T: Copy + Default, const N: usize> Deref for BoundedVec<T, N> {
 
     fn deref(&self) -> &[T] {
         self.as_slice()
+    }
+}
+
+impl<T: Copy + Default, const N: usize> DerefMut for BoundedVec<T, N> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        &mut self.items[..self.len]
     }
 }
 

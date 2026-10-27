@@ -48,6 +48,7 @@ impl SessionObserver for Recorder {
             SessionEvent::Released { reason, .. } => format!("released {reason}"),
             SessionEvent::Report { outputs, .. } => format!("report {}", outputs.len()),
             SessionEvent::StockEvents { events, .. } => format!("stock {}", events.len()),
+            SessionEvent::Trace { record } => format!("trace {record}"),
         };
         self.lines.push(line);
     }

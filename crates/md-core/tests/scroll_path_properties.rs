@@ -1,7 +1,9 @@
 use md_core::config::Config;
 use md_core::profile::MAGIC_MOUSE_2_BT;
-use md_core::synth::{Frame, SCROLL_FINGER_SPACING_MM, TOUCHPAD_SLOTS, VIRTUAL_TOUCHPAD};
-use md_core::testkit::scenarios::{Scenario, drive, finger, palm};
+use md_core::synth::{
+    Frame, SCROLL_FINGER_SPACING_MM, SWIPE_FINGER_SPACING_MM, TOUCHPAD_SLOTS, VIRTUAL_TOUCHPAD,
+};
+use md_core::testkit::scenarios::{self, Scenario, drive, finger, palm};
 use md_core::testkit::{ReportBuilder, TouchRecord, touch_state};
 use md_core::{Engine, Input, Micros, Mode, Output};
 use proptest::prelude::*;
@@ -74,10 +76,14 @@ struct Movement {
     last_delta_mm: f64,
 }
 
+const SWIPE_FINGERS: usize = 4;
+
 struct Checker {
     open: [Option<Movement>; TOUCHPAD_SLOTS],
     last: Frame,
     buttons_down: usize,
+    scroll_frames: usize,
+    swipe_frames: usize,
 }
 
 impl Checker {
@@ -86,6 +92,8 @@ impl Checker {
             open: [None; TOUCHPAD_SLOTS],
             last: Frame::EMPTY,
             buttons_down: 0,
+            scroll_frames: 0,
+            swipe_frames: 0,
         }
     }
 
@@ -100,20 +108,35 @@ impl Checker {
                 Ok(())
             }
             Output::TouchFrame(frame) => self.frame(t, frame),
-            Output::PointerMotion { .. } => Ok(()),
+            Output::PointerMotion { .. } | Output::Trace(_) => Ok(()),
         }
     }
 
     fn frame(&mut self, t: Micros, frame: &Frame) -> Result<(), TestCaseError> {
         prop_assert_ne!(*frame, self.last, "repeated frame");
         let count = frame.contact_count();
-        prop_assert!(count == 0 || count == 2, "frame with {} contacts", count);
-        if count == 2 {
-            let (a, b) = (frame.slots[0].unwrap(), frame.slots[1].unwrap());
-            prop_assert_eq!(
-                b.x - a.x,
-                VIRTUAL_TOUCHPAD.mm_to_units(SCROLL_FINGER_SPACING_MM)
-            );
+        prop_assert!(
+            count == 0 || count == 2 || count == SWIPE_FINGERS,
+            "frame with {} contacts",
+            count
+        );
+        let previous = self.last.contact_count();
+        prop_assert!(
+            count == 0 || previous == 0 || count == previous,
+            "scroll and swipe output overlap: {} contacts after {}",
+            count,
+            previous
+        );
+        let spacing = if count == 2 {
+            self.scroll_frames += 1;
+            SCROLL_FINGER_SPACING_MM
+        } else {
+            self.swipe_frames += usize::from(count == SWIPE_FINGERS);
+            SWIPE_FINGER_SPACING_MM
+        };
+        for slot in 1..count {
+            let (a, b) = (frame.slots[slot - 1].unwrap(), frame.slots[slot].unwrap());
+            prop_assert_eq!(b.x - a.x, VIRTUAL_TOUCHPAD.mm_to_units(spacing));
             prop_assert_eq!(a.y, b.y);
         }
         if self.buttons_down > 0 {
@@ -326,4 +349,145 @@ fn longest_stroke_corner_to_corner_stays_on_the_surface() {
     }
     assert!(frames > 100);
     assert!(checker.all_closed());
+}
+
+#[derive(Debug, Clone)]
+enum Gesture {
+    OneFinger {
+        start: (i32, i32),
+        step: (i32, i32),
+        steps: usize,
+    },
+    TwoFingers {
+        start: (i32, i32),
+        step: (i32, i32),
+        steps: usize,
+    },
+    Tap {
+        frames: usize,
+        click: bool,
+    },
+    Click {
+        frames: usize,
+    },
+    Gap {
+        frames: usize,
+    },
+}
+
+fn gesture_strategy() -> impl Strategy<Value = Gesture> {
+    prop_oneof![
+        3 => ((-900_i32..900, -1_200_i32..600), (-40_i32..40, -40_i32..40), 3_usize..40)
+            .prop_map(|(start, step, steps)| Gesture::OneFinger { start, step, steps }),
+        3 => ((-1_000_i32..300, -1_200_i32..600), (-60_i32..60, -20_i32..20), 3_usize..30)
+            .prop_map(|(start, step, steps)| Gesture::TwoFingers { start, step, steps }),
+        2 => (1_usize..10, proptest::bool::weighted(0.2))
+            .prop_map(|(frames, click)| Gesture::Tap { frames, click }),
+        1 => (1_usize..10).prop_map(|frames| Gesture::Click { frames }),
+        3 => (0_usize..40).prop_map(|frames| Gesture::Gap { frames }),
+    ]
+}
+
+fn steps_on_surface(starts: &[(i32, i32)], step: (i32, i32), steps: usize) -> Vec<(i32, i32)> {
+    let surface = MAGIC_MOUSE_2_BT.surface;
+    let mut kept = Vec::new();
+    let mut offset = (0, 0);
+    while kept.len() < steps {
+        let next = (offset.0 + step.0, offset.1 + step.1);
+        let inside = starts.iter().all(|(x, y)| {
+            (surface.x.min..=surface.x.max).contains(&(x + next.0))
+                && (surface.y.min..=surface.y.max).contains(&(y + next.1))
+        });
+        if !inside {
+            break;
+        }
+        offset = next;
+        kept.push(step);
+    }
+    kept
+}
+
+fn build(gestures: &[Gesture]) -> Scenario {
+    let mut scenario = Scenario::new();
+    let background = [palm()];
+    for gesture in gestures {
+        match *gesture {
+            Gesture::OneFinger { start, step, steps } => {
+                scenario.stroke(&background, start, &steps_on_surface(&[start], step, steps));
+            }
+            Gesture::TwoFingers { start, step, steps } => {
+                let second = (start.0 + 600, start.1);
+                let kept = steps_on_surface(&[start, second], step, steps);
+                scenario.two_finger_stroke(&background, [start, second], &kept);
+            }
+            Gesture::Tap { frames, click } => {
+                scenario.two_finger_tap(&background, frames, click);
+            }
+            Gesture::Click { frames } => {
+                let touch = finger(-600, 200);
+                scenario.push(
+                    ReportBuilder::new()
+                        .touch(palm())
+                        .touch(touch.state(touch_state::START)),
+                );
+                scenario.repeat(
+                    frames,
+                    &ReportBuilder::new().left(true).touch(palm()).touch(touch),
+                );
+                scenario.push(
+                    ReportBuilder::new()
+                        .touch(palm())
+                        .touch(touch.state(touch_state::LIFT_50)),
+                );
+                scenario.push(ReportBuilder::new().touch(palm()));
+            }
+            Gesture::Gap { frames } => {
+                scenario.repeat(frames, &ReportBuilder::new().touch(palm()));
+            }
+        }
+    }
+    scenario.repeat(40, &ReportBuilder::new().touch(palm()));
+    scenario
+}
+
+fn check(scenario: &Scenario) -> Result<Checker, TestCaseError> {
+    let mut engine = Engine::new(&MAGIC_MOUSE_2_BT, Config::default(), Mode::Normal);
+    let timeline = drive(&mut engine, &scenario.timed());
+    let mut checker = Checker::new();
+    for (t, output) in &timeline {
+        checker.apply(*t, output)?;
+    }
+    prop_assert!(checker.all_closed(), "slot open at the end");
+    prop_assert_eq!(engine.next_deadline(), None);
+    Ok(checker)
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    #[test]
+    fn swipe_and_scroll_outputs_never_overlap(
+        gestures in proptest::collection::vec(gesture_strategy(), 1..12)
+    ) {
+        check(&build(&gestures))?;
+    }
+}
+
+#[test]
+fn scroll_swipe_and_overview_in_one_session_never_overlap() {
+    let mut scenario = scenarios::slow_scroll();
+    scenario.two_finger_stroke(
+        &[palm()],
+        [(-500, 200), (100, 200)],
+        &scenarios::two_finger_swipe_steps(40),
+    );
+    scenario.repeat(5, &ReportBuilder::new().touch(palm()));
+    scenario.stroke(&[palm()], (-900, 0), &[(20, 0); 40]);
+    scenario.two_finger_tap(&[palm()], 6, false);
+    scenario.repeat(12, &ReportBuilder::new().touch(palm()));
+    scenario.two_finger_tap(&[palm()], 6, false);
+    scenario.stroke(&[palm()], (-100, 600), &[(0, -24); 30]);
+    let checker = check(&scenario).unwrap();
+    assert!(checker.scroll_frames > 50, "{}", checker.scroll_frames);
+    assert!(checker.swipe_frames > 15, "{}", checker.swipe_frames);
 }

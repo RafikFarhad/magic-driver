@@ -119,6 +119,12 @@ impl<D: DeviceDirectory, O: DeviceOpener> Runtime<D, O> {
         &self.manager
     }
 
+    pub fn set_tracing(&mut self, enabled: bool) {
+        if self.manager.is_tracing() != enabled {
+            self.manager.set_tracing(enabled);
+        }
+    }
+
     pub fn session_fds(&self) -> Option<SessionFds<'_>> {
         self.manager.fds()
     }

@@ -9,6 +9,7 @@ publish.workspace = true
 clap.workspace = true
 evdev.workspace = true
 md-core.workspace = true
+md-trace.workspace = true
 nix.workspace = true
 sd-notify.workspace = true
 serde.workspace = true

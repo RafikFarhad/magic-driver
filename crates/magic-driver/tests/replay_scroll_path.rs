@@ -77,6 +77,10 @@ fn every_synthetic_scenario_replays_offline() {
                 | "click-left"
                 | "click-right"
                 | "click-middle"
+                | "two-finger-vertical"
+                | "two-finger-single-tap"
+                | "two-finger-tap-with-click"
+                | "two-finger-slow-second-tap"
         );
         assert_eq!(frames > 0, expects_frames, "{name}");
         if expects_frames {

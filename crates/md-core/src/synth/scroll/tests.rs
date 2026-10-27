@@ -1,18 +1,22 @@
 use super::*;
 use crate::profile::MAGIC_MOUSE_2_BT;
 use crate::report;
+use crate::surface::SurfacePointMm;
+use crate::synth::gain::GainCurve;
 use crate::testkit::scenarios::finger;
 use crate::testkit::{ReportBuilder, TouchRecord, touch_state};
 
 const FRAME: Micros = Micros::new(11_111);
 const SETTINGS: ScrollSettings = ScrollSettings {
-    gain: 1.0,
+    gain: GainCurve::constant(1.0),
     horizontal: true,
+    axis_lock: false,
 };
 
 struct Harness {
     tracker: Tracker,
     synth: ScrollSynth,
+    ids: TrackingIds,
     t: Micros,
 }
 
@@ -21,6 +25,7 @@ impl Harness {
         Harness {
             tracker: Tracker::new(MAGIC_MOUSE_2_BT.surface),
             synth: ScrollSynth::new(MAGIC_MOUSE_2_BT.surface),
+            ids: TrackingIds::default(),
             t: Micros::ZERO,
         }
     }
@@ -34,9 +39,13 @@ impl Harness {
     fn step(&mut self, touch: TouchRecord, settings: ScrollSettings) -> Option<Frame> {
         self.touch(touch);
         let track = self.tracker.by_touch_id(touch.id).unwrap().id;
-        let frame = self
-            .synth
-            .update(self.t, Intent::Scroll { track }, &self.tracker, settings);
+        let frame = self.synth.update(
+            self.t,
+            Intent::Scroll { track },
+            &self.tracker,
+            &mut self.ids,
+            &settings,
+        );
         self.t += FRAME;
         frame
     }
@@ -79,7 +88,10 @@ fn scroll_starts_with_two_fingers_20_mm_apart_at_the_centre() {
 fn fingers_move_by_the_finger_delta_times_the_gain() {
     for gain in [1.0, 2.0] {
         let mut harness = Harness::new();
-        let settings = ScrollSettings { gain, ..SETTINGS };
+        let settings = ScrollSettings {
+            gain: GainCurve::constant(gain),
+            ..SETTINGS
+        };
         harness.step(finger(0, 300), settings);
         let forward_units = -71;
         let sideways_units = 26;
@@ -139,22 +151,34 @@ fn freeze_keeps_the_fingers_and_none_lifts_them() {
     let frozen = *harness.synth.frame();
     harness.touch(finger(0, 100));
     assert_eq!(
-        harness
-            .synth
-            .update(harness.t, Intent::Freeze, &harness.tracker, SETTINGS),
+        harness.synth.update(
+            harness.t,
+            Intent::Freeze,
+            &harness.tracker,
+            &mut harness.ids,
+            &SETTINGS,
+        ),
         None
     );
     assert_eq!(*harness.synth.frame(), frozen);
     assert_eq!(
-        harness
-            .synth
-            .update(harness.t, Intent::None, &harness.tracker, SETTINGS),
+        harness.synth.update(
+            harness.t,
+            Intent::None,
+            &harness.tracker,
+            &mut harness.ids,
+            &SETTINGS,
+        ),
         Some(Frame::EMPTY)
     );
     assert_eq!(
-        harness
-            .synth
-            .update(harness.t, Intent::None, &harness.tracker, SETTINGS),
+        harness.synth.update(
+            harness.t,
+            Intent::None,
+            &harness.tracker,
+            &mut harness.ids,
+            &SETTINGS,
+        ),
         None
     );
 }
@@ -165,15 +189,25 @@ fn hold_places_stationary_fingers_and_a_scroll_continues_them() {
     harness.touch(finger(0, 300).state(touch_state::START));
     let hold = harness
         .synth
-        .update(harness.t, Intent::Hold, &harness.tracker, SETTINGS)
+        .update(
+            harness.t,
+            Intent::Hold,
+            &harness.tracker,
+            &mut harness.ids,
+            &SETTINGS,
+        )
         .unwrap();
     assert_eq!(points(&hold), centre_pair().to_vec());
     harness.t += FRAME;
     harness.touch(finger(0, 200));
     assert_eq!(
-        harness
-            .synth
-            .update(harness.t, Intent::Hold, &harness.tracker, SETTINGS),
+        harness.synth.update(
+            harness.t,
+            Intent::Hold,
+            &harness.tracker,
+            &mut harness.ids,
+            &SETTINGS,
+        ),
         None
     );
     harness.t += FRAME;
@@ -255,4 +289,100 @@ fn step_limiter_keeps_the_last_step_after_an_unchecked_gap() {
     assert!((limiter.max_step_mm(next) - 9.0).abs() < 1e-9);
     limiter.record(next, 0.0);
     assert!((limiter.max_step_mm(next) - 9.0).abs() < 1e-9);
+}
+
+#[test]
+fn axis_lock_decides_after_a_small_travel_and_keeps_the_decision() {
+    let mut lock = AxisLock::default();
+    assert_eq!(lock.update(SurfacePointMm::new(0.2, 0.5)), None);
+    assert_eq!(
+        lock.update(SurfacePointMm::new(0.3, -1.2)),
+        Some(Axis::Vertical)
+    );
+    assert_eq!(
+        lock.update(SurfacePointMm::new(30.0, -1.2)),
+        Some(Axis::Vertical)
+    );
+    let mut lock = AxisLock::default();
+    assert_eq!(
+        lock.update(SurfacePointMm::new(-1.5, 0.4)),
+        Some(Axis::Horizontal)
+    );
+}
+
+#[test]
+fn axis_lock_waits_on_a_diagonal_start_until_the_force_distance() {
+    let mut lock = AxisLock::default();
+    assert_eq!(lock.update(SurfacePointMm::new(1.0, 1.2)), None);
+    assert_eq!(lock.update(SurfacePointMm::new(2.5, 2.6)), None);
+    assert_eq!(
+        lock.update(SurfacePointMm::new(
+            AXIS_LOCK_FORCE_MM,
+            AXIS_LOCK_FORCE_MM * 0.9
+        )),
+        Some(Axis::Horizontal)
+    );
+    let mut lock = AxisLock::default();
+    assert_eq!(lock.update(SurfacePointMm::new(0.0, 0.5)), None);
+    assert_eq!(
+        lock.update(SurfacePointMm::new(0.0, AXIS_LOCK_DECIDE_MM)),
+        Some(Axis::Vertical)
+    );
+}
+
+#[test]
+fn axis_lock_zeroes_the_minor_axis_of_a_drifting_stroke() {
+    let settings = ScrollSettings {
+        axis_lock: true,
+        ..SETTINGS
+    };
+    let left_x = centre_pair()[0].x;
+    let left_y = centre_pair()[0].y;
+    let mut harness = Harness::new();
+    harness.step(finger(0, 300), settings);
+    for step in 1..20 {
+        harness.step(finger(step * 8, 300 - step * 40), settings);
+    }
+    let locked = harness.synth.frame().slots[0].unwrap();
+    assert_eq!(locked.x, left_x);
+    assert!(locked.y < left_y);
+    let mut harness = Harness::new();
+    harness.step(finger(0, 300), SETTINGS);
+    for step in 1..20 {
+        harness.step(finger(step * 8, 300 - step * 40), SETTINGS);
+    }
+    assert!(harness.synth.frame().slots[0].unwrap().x > left_x);
+}
+
+#[test]
+fn the_gain_follows_the_finger_speed() {
+    let settings = ScrollSettings {
+        gain: GainCurve {
+            gain_min: 1.0,
+            gain_max: 3.0,
+            speed_start_mm_s: 20.0,
+            speed_end_mm_s: 100.0,
+        },
+        ..SETTINGS
+    };
+    let start_y = centre_pair()[0].y;
+    let gain_for = |per_frame: i32| {
+        let mut harness = Harness::new();
+        let mut y = -1_000;
+        harness.step(finger(0, y), settings);
+        for _ in 0..10 {
+            y += per_frame;
+            harness.step(finger(0, y), settings);
+        }
+        for _ in 0..10 {
+            harness.step(finger(0, y), settings);
+        }
+        let moved = harness.synth.frame().slots[0].unwrap().y - start_y;
+        let finger_mm = MAGIC_MOUSE_2_BT.surface.y.units_to_mm(per_frame * 10);
+        f64::from(moved) / f64::from(VIRTUAL_TOUCHPAD.units_per_mm) / finger_mm
+    };
+    let slow = gain_for(8);
+    let fast = gain_for(200);
+    assert!((slow - 1.0).abs() < 0.05, "slow gain {slow}");
+    assert!(fast > 2.0, "fast gain {fast}");
 }
