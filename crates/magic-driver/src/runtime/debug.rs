@@ -1,5 +1,4 @@
 use std::fmt::Write as _;
-use std::io::Write;
 
 use evdev::{EventType, KeyCode, RelativeAxisCode, SynchronizationCode};
 use md_core::profile::Profile;
@@ -193,42 +192,38 @@ pub fn render_report(profile: &Profile, t: Micros, bytes: &[u8], outputs: &[Outp
     line
 }
 
-pub struct TerminalObserver<W: Write> {
-    out: W,
+pub struct LogObserver {
     debug: bool,
     cross_check: CrossCheck,
 }
 
-impl<W: Write> TerminalObserver<W> {
-    pub fn new(out: W, debug: bool) -> TerminalObserver<W> {
-        TerminalObserver {
-            out,
+impl LogObserver {
+    pub fn new(debug: bool) -> LogObserver {
+        LogObserver {
             debug,
             cross_check: CrossCheck::default(),
         }
     }
-
-    #[cfg(test)]
-    pub fn into_inner(self) -> W {
-        self.out
-    }
-
-    fn line(&mut self, line: &str) {
-        let _ = writeln!(self.out, "{line}");
-    }
 }
 
-impl<W: Write> SessionObserver for TerminalObserver<W> {
+impl SessionObserver for LogObserver {
     fn observe(&mut self, event: &SessionEvent<'_>) {
         match event {
-            SessionEvent::Acquired { nodes } => {
+            SessionEvent::Acquired {
+                nodes,
+                elapsed,
+                attempts,
+            } => {
                 self.cross_check = CrossCheck::default();
-                self.line(&format!(
-                    "magic-driver: active: {} (raw {}, stock {} grabbed)",
+                tracing::info!(
+                    "active: {} (raw {}, stock {} grabbed), taken over {} ms after the mouse appeared, {} attempt{}",
                     nodes.profile.name,
                     nodes.hidraw.display(),
-                    nodes.evdev.display()
-                ));
+                    nodes.evdev.display(),
+                    elapsed.as_millis(),
+                    attempts,
+                    if *attempts == 1 { "" } else { "s" }
+                );
             }
             SessionEvent::AcquireFailed {
                 nodes,
@@ -236,25 +231,41 @@ impl<W: Write> SessionObserver for TerminalObserver<W> {
                 error,
                 retry_in,
             } => {
-                let next = match retry_in {
-                    Some(delay) => format!("retrying in {} ms", delay.as_millis()),
-                    None => "giving up, the mouse keeps its stock behaviour".to_owned(),
-                };
-                self.line(&format!(
-                    "magic-driver: cannot {step} for {}: {error}; {next}",
-                    nodes.hidraw.display()
-                ));
-            }
-            SessionEvent::Released { nodes, reason } => {
-                self.line(&format!(
-                    "magic-driver: released {}: {reason}; stock behaviour restored",
-                    nodes.hidraw.display()
-                ));
-                if self.debug {
-                    let summary = self.cross_check.summary();
-                    self.line(&summary);
+                if let Some(delay) = retry_in {
+                    tracing::debug!(
+                        "cannot {step} for {}: {error}; retrying in {} ms",
+                        nodes.hidraw.display(),
+                        delay.as_millis()
+                    );
+                } else {
+                    tracing::warn!(
+                        "cannot {step} for {}: {error}; giving up for now, the mouse keeps its stock behaviour",
+                        nodes.hidraw.display()
+                    );
                 }
             }
+            SessionEvent::Released { nodes, reason } => {
+                tracing::info!(
+                    "released {}: {reason}; stock behaviour restored",
+                    nodes.hidraw.display()
+                );
+                if self.debug {
+                    tracing::debug!("{}", self.cross_check.summary());
+                }
+            }
+            SessionEvent::Degraded {
+                nodes,
+                cause,
+                retry_in,
+            } => tracing::error!(
+                "degraded {}: {cause}; the mouse keeps its stock behaviour, retrying in {} s",
+                nodes.hidraw.display(),
+                retry_in.as_millis() / 1_000
+            ),
+            SessionEvent::Retrying { nodes, cause } => tracing::info!(
+                "retrying takeover of {} after: {cause}",
+                nodes.hidraw.display()
+            ),
             SessionEvent::Report { t, bytes, outputs } => {
                 if !self.debug {
                     return;
@@ -264,16 +275,14 @@ impl<W: Write> SessionObserver for TerminalObserver<W> {
                     self.cross_check
                         .on_hidraw(report.header.dx, report.header.dy, outputs);
                 }
-                let line = render_report(profile, *t, bytes, outputs);
-                self.line(&line);
+                tracing::debug!("{}", render_report(profile, *t, bytes, outputs));
             }
             SessionEvent::StockEvents { t, events } => {
                 if !self.debug {
                     return;
                 }
                 self.cross_check.on_stock(events);
-                let line = render_stock_events(*t, events);
-                self.line(&line);
+                tracing::debug!("{}", render_stock_events(*t, events));
             }
         }
     }
@@ -287,10 +296,14 @@ mod tests {
     use md_core::testkit::{ReportBuilder, TouchRecord};
     use nix::errno::Errno;
 
+    use tracing::Level;
+
     use super::*;
     use crate::discovery::MouseNodes;
     use crate::io::DeviceError;
-    use crate::session::{AcquireStep, ReleaseReason};
+    use crate::logging::capture::{Record, capture};
+    use crate::session::selfcheck::SelfCheckFailure;
+    use crate::session::{AcquireStep, DegradeCause, ReleaseReason};
 
     const SYN: EvdevEvent = EvdevEvent::new(0, 0, 0);
 
@@ -395,20 +408,29 @@ mod tests {
         }
     }
 
-    fn render(debug: bool, events: &[SessionEvent<'_>]) -> String {
-        let mut observer = TerminalObserver::new(Vec::new(), debug);
-        for event in events {
-            observer.observe(event);
-        }
-        String::from_utf8(observer.into_inner()).unwrap()
+    fn render(debug: bool, events: &[SessionEvent<'_>]) -> Vec<Record> {
+        let mut observer = LogObserver::new(debug);
+        capture(|| {
+            for event in events {
+                observer.observe(event);
+            }
+        })
+    }
+
+    fn at(records: &[Record], level: Level) -> Vec<&str> {
+        records
+            .iter()
+            .filter(|record| record.level == level)
+            .map(|record| record.message.as_str())
+            .collect()
     }
 
     #[test]
-    fn lifecycle_lines_are_printed_without_debug() {
+    fn lifecycle_lines_are_info_and_retries_are_debug() {
         let nodes = nodes();
         let error = DeviceError::from(Errno::EACCES);
         let bytes = ReportBuilder::new().motion(1, 1).build();
-        let text = render(
+        let records = render(
             false,
             &[
                 SessionEvent::AcquireFailed {
@@ -417,7 +439,11 @@ mod tests {
                     error: &error,
                     retry_in: Some(Micros::from_millis(50)),
                 },
-                SessionEvent::Acquired { nodes: &nodes },
+                SessionEvent::Acquired {
+                    nodes: &nodes,
+                    elapsed: Micros::from_millis(50),
+                    attempts: 2,
+                },
                 SessionEvent::Report {
                     t: Micros::new(1),
                     bytes: &bytes,
@@ -433,19 +459,16 @@ mod tests {
                 },
             ],
         );
-        let lines: Vec<_> = text.lines().collect();
-        assert_eq!(lines.len(), 3, "{text}");
-        assert!(lines[0].starts_with(
-            "magic-driver: cannot open raw device for /dev/hidraw5: permission denied"
-        ));
-        assert!(lines[0].ends_with("; retrying in 50 ms"));
+        assert_eq!(records.len(), 3, "{records:?}");
+        let debug = at(&records, Level::DEBUG);
+        assert!(debug[0].starts_with("cannot open raw device for /dev/hidraw5: permission denied"));
+        assert!(debug[0].ends_with("; retrying in 50 ms"));
         assert_eq!(
-            lines[1],
-            "magic-driver: active: Apple Magic Mouse 2 (Bluetooth) (raw /dev/hidraw5, stock /dev/input/event16 grabbed)"
-        );
-        assert_eq!(
-            lines[2],
-            "magic-driver: released /dev/hidraw5: shutdown; stock behaviour restored"
+            at(&records, Level::INFO),
+            [
+                "active: Apple Magic Mouse 2 (Bluetooth) (raw /dev/hidraw5, stock /dev/input/event16 grabbed), taken over 50 ms after the mouse appeared, 2 attempts",
+                "released /dev/hidraw5: shutdown; stock behaviour restored",
+            ]
         );
     }
 
@@ -453,10 +476,14 @@ mod tests {
     fn debug_prints_reports_stock_events_and_the_cross_check() {
         let nodes = nodes();
         let bytes = ReportBuilder::new().motion(1, 1).build();
-        let text = render(
+        let records = render(
             true,
             &[
-                SessionEvent::Acquired { nodes: &nodes },
+                SessionEvent::Acquired {
+                    nodes: &nodes,
+                    elapsed: Micros::ZERO,
+                    attempts: 1,
+                },
                 SessionEvent::Report {
                     t: Micros::new(1),
                     bytes: &bytes,
@@ -476,31 +503,51 @@ mod tests {
                 },
             ],
         );
-        let lines: Vec<_> = text.lines().collect();
-        assert_eq!(lines.len(), 5, "{text}");
-        assert!(lines[1].starts_with("1 hidraw clicks=0 dx=1 dy=1"));
-        assert_eq!(lines[2], "2 stock REL_X=1 REL_Y=1 SYN");
-        assert!(lines[4].starts_with("cross-check: hidraw reports=1 dx=1 dy=1"));
-        assert!(lines[4].ends_with("motion match | buttons match"));
+        assert_eq!(records.len(), 5, "{records:?}");
+        assert!(records[0].message.ends_with("1 attempt"));
+        let debug = at(&records, Level::DEBUG);
+        assert!(debug[0].starts_with("1 hidraw clicks=0 dx=1 dy=1"));
+        assert_eq!(debug[1], "2 stock REL_X=1 REL_Y=1 SYN");
+        assert!(debug[2].starts_with("cross-check: hidraw reports=1 dx=1 dy=1"));
+        assert!(debug[2].ends_with("motion match | buttons match"));
     }
 
     #[test]
-    fn giving_up_says_the_stock_behaviour_stays() {
+    fn giving_up_and_degrading_are_warned_and_name_the_cause() {
         let nodes = nodes();
         let error = DeviceError::from(Errno::EBUSY);
-        let text = render(
+        let records = render(
             false,
-            &[SessionEvent::AcquireFailed {
-                nodes: &nodes,
-                step: AcquireStep::Grab,
-                error: &error,
-                retry_in: None,
-            }],
+            &[
+                SessionEvent::AcquireFailed {
+                    nodes: &nodes,
+                    step: AcquireStep::Grab,
+                    error: &error,
+                    retry_in: None,
+                },
+                SessionEvent::Degraded {
+                    nodes: &nodes,
+                    cause: DegradeCause::SelfCheck(SelfCheckFailure::NoRawReports),
+                    retry_in: Micros::from_millis(5_000),
+                },
+                SessionEvent::Retrying {
+                    nodes: &nodes,
+                    cause: DegradeCause::ReadFailed,
+                },
+            ],
         );
-        assert!(text.contains("cannot grab stock device for /dev/hidraw5: busy"));
-        assert!(
-            text.trim_end()
-                .ends_with("giving up, the mouse keeps its stock behaviour")
+        let warn = at(&records, Level::WARN);
+        assert!(warn[0].contains("cannot grab stock device for /dev/hidraw5: busy"));
+        assert!(warn[0].ends_with("the mouse keeps its stock behaviour"));
+        assert_eq!(
+            at(&records, Level::ERROR),
+            [
+                "degraded /dev/hidraw5: no valid hidraw report for 250 ms while the stock device is active; the mouse keeps its stock behaviour, retrying in 5 s"
+            ]
+        );
+        assert_eq!(
+            at(&records, Level::INFO),
+            ["retrying takeover of /dev/hidraw5 after: device read failed"]
         );
     }
 }

@@ -1,0 +1,5 @@
+[Libinput][19780][2][magic-driver touchpad]
+DisableEventsOnExternalMouse=false
+NaturalScroll=true
+ScrollFactor=1.5
+TapToClick=false

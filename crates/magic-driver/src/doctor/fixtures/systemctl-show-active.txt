@@ -1,0 +1,4 @@
+LoadState=loaded
+ActiveState=active
+SubState=running
+StatusText=active: Apple Magic Mouse 2 (Bluetooth) on hidraw5

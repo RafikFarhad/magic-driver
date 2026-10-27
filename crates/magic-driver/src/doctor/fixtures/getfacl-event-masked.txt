@@ -1,0 +1,6 @@
+user::rw-
+user:owner:rw-			#effective:---
+group::rw-			#effective:---
+mask::---
+other::---
+

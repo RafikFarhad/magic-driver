@@ -25,6 +25,15 @@ check_core_dependencies() {
     printf 'md-core has no Linux, I/O or clock dependencies\n'
 }
 
+check_shell_scripts() {
+    if ! command -v shellcheck >/dev/null 2>&1; then
+        printf 'shellcheck is not installed, skipped (CI installs it)\n'
+        return 0
+    fi
+    shellcheck scripts/*.sh
+    printf 'shell scripts are shellcheck clean\n'
+}
+
 step "cargo fmt --check"
 cargo fmt --all --check
 
@@ -36,5 +45,8 @@ cargo test --locked --workspace
 
 step "md-core dependency check"
 check_core_dependencies
+
+step "shellcheck"
+check_shell_scripts
 
 printf '\nAll checks passed.\n'

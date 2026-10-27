@@ -1,0 +1,5 @@
+Libinput: event16 - Owner’s Magic Mouse: kernel bug: device supports high-resolution scroll but only low-resolution events have been received.
+See https://wayland.freedesktop.org/libinput/doc/1.31.3/incorrectly-enabled-hires.html for details
+
+Libinput: event16 - Owner’s Magic Mouse: kernel bug: device supports high-resolution scroll but only low-resolution events have been received.
+See https://wayland.freedesktop.org/libinput/doc/1.31.3/incorrectly-enabled-hires.html for details

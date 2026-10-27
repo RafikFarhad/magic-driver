@@ -22,11 +22,11 @@ jobs:
             fi
           done
 
-      - name: Install libudev headers
+      - name: Install libudev headers and shellcheck
         run: |
           set -eu
           apt-get update
-          apt-get install -y --no-install-recommends libudev-dev pkg-config
+          apt-get install -y --no-install-recommends libudev-dev pkg-config shellcheck
 
       - name: Install the pinned toolchain
         run: rustup toolchain install

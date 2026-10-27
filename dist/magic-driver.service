@@ -1,0 +1,20 @@
+[Unit]
+Description=magic-driver for Apple Magic Mouse 2
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/magic-driver run
+ExecReload=/usr/local/bin/magic-driver config test
+ExecReload=/bin/kill -HUP $MAINPID
+WatchdogSec=2
+Restart=always
+RestartSec=1
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+LockPersonality=yes
+MemoryMax=64M
+
+[Install]
+WantedBy=graphical-session.target

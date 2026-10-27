@@ -1,0 +1,12 @@
+[Libinput][2362][9488][PixArt USB Optical Mouse]
+PointerAcceleration=-0.200
+
+[Libinput][4012][6878][keyd virtual pointer]
+NaturalScroll=true
+ScrollFactor=4
+
+[Libinput][76][617][Owner’s Magic Mouse]
+NaturalScroll=true
+PointerAcceleration=-0.700
+PointerAccelerationProfile=2
+ScrollFactor=4

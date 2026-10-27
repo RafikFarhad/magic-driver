@@ -1,4 +1,4 @@
-use std::io::{self, Stderr};
+use std::env;
 use std::os::fd::{AsFd, BorrowedFd};
 
 use md_core::Mode;
@@ -9,10 +9,14 @@ use nix::sys::signalfd::{SfdFlags, SignalFd};
 use nix::sys::time::TimeSpec;
 use nix::sys::timerfd::{ClockId, Expiration, TimerFd, TimerFlags, TimerSetTimeFlags};
 
-use super::debug::TerminalObserver;
+use super::debug::LogObserver;
 use super::{Clock, MonotonicClock, Ready, Runtime, StopSignal, timer_delay};
+use crate::config_file::default_config_path;
+use crate::daemon_config::{ConfigSource, initial_config};
 use crate::discovery::udev_directory::UdevDirectory;
 use crate::io::{DeviceDirectory, DeviceError, DeviceOpener, LinuxDevices};
+use crate::logging::Logging;
+use crate::service::{SystemdNotifier, Watchdog, watchdog_timeout_from_env};
 
 const TOKEN_DIRECTORY: u64 = 0;
 const TOKEN_SIGNAL: u64 = 1;
@@ -28,11 +32,12 @@ pub enum RunError {
     Discovery(#[from] DeviceError),
 }
 
-pub fn stop_signal(signo: u32) -> Option<StopSignal> {
+pub fn signal_ready(signo: u32) -> Option<Ready> {
     let signal = Signal::try_from(i32::try_from(signo).ok()?).ok()?;
     match signal {
-        Signal::SIGINT => Some(StopSignal::Interrupt),
-        Signal::SIGTERM => Some(StopSignal::Terminate),
+        Signal::SIGINT => Some(Ready::Signal(StopSignal::Interrupt)),
+        Signal::SIGTERM => Some(Ready::Signal(StopSignal::Terminate)),
+        Signal::SIGHUP => Some(Ready::Reload),
         _ => None,
     }
 }
@@ -91,9 +96,30 @@ fn arm_timer(
 }
 
 pub fn run(mode: Mode, debug: bool) -> Result<Option<StopSignal>, RunError> {
+    let mut source = default_config_path(env::var_os("XDG_CONFIG_HOME"), env::var_os("HOME"))
+        .map(ConfigSource::new);
+    let outcome = source.as_ref().map(ConfigSource::load);
+    let config = outcome
+        .as_ref()
+        .map_or_else(md_core::config::Config::default, initial_config);
+    let logging = Logging::init(config.log.level, debug);
+    let debug_note = if debug { " with --debug" } else { "" };
+    tracing::info!(
+        "starting magic-driver {}{debug_note}",
+        env!("CARGO_PKG_VERSION")
+    );
+    if let (Some(source), Some(outcome)) = (source.as_mut(), outcome.as_ref()) {
+        source.report_initial(outcome);
+    } else {
+        tracing::warn!(
+            "cannot locate the config file: neither XDG_CONFIG_HOME nor HOME is set; using defaults"
+        );
+    }
+
     let mut mask = SigSet::empty();
     mask.add(Signal::SIGINT);
     mask.add(Signal::SIGTERM);
+    mask.add(Signal::SIGHUP);
     mask.thread_block()?;
     let signals = SignalFd::with_flags(&mask, SfdFlags::SFD_NONBLOCK | SfdFlags::SFD_CLOEXEC)?;
     let timer = TimerFd::new(
@@ -108,14 +134,26 @@ pub fn run(mode: Mode, debug: bool) -> Result<Option<StopSignal>, RunError> {
     register(&epoll, signals.as_fd(), TOKEN_SIGNAL)?;
     register(&epoll, timer.as_fd(), TOKEN_TIMER)?;
 
+    let watchdog = watchdog_timeout_from_env().and_then(Watchdog::new);
+    if let Some(watchdog) = watchdog {
+        tracing::debug!(
+            "systemd watchdog enabled, petting every {} ms",
+            watchdog.interval().as_millis()
+        );
+    }
     let clock = MonotonicClock::new();
-    let mut observer: TerminalObserver<Stderr> = TerminalObserver::new(io::stderr(), debug);
-    let mut runtime = Runtime::new(directory, LinuxDevices, mode);
+    let mut observer = LogObserver::new(debug);
+    let mut runtime = Runtime::new(directory, LinuxDevices, mode, config)
+        .with_service(Box::new(SystemdNotifier), watchdog);
+    if let Some(source) = source {
+        runtime = runtime.with_config_source(source);
+    }
     let result = event_loop(
         &epoll,
         &signals,
         &timer,
         &clock,
+        &logging,
         &mut runtime,
         &mut observer,
     );
@@ -128,12 +166,13 @@ fn event_loop(
     signals: &SignalFd,
     timer: &TimerFd,
     clock: &MonotonicClock,
+    logging: &Logging,
     runtime: &mut Runtime<UdevDirectory, LinuxDevices>,
-    observer: &mut TerminalObserver<Stderr>,
+    observer: &mut LogObserver,
 ) -> Result<(), RunError> {
     runtime.start(clock.now(), observer)?;
     if runtime.manager().known().is_empty() {
-        eprintln!("magic-driver: no Magic Mouse 2 found yet, waiting for it to connect");
+        tracing::info!("no Magic Mouse 2 found yet, waiting for it to connect");
     }
     let mut registered = None;
     let mut events = [EpollEvent::empty(); 16];
@@ -151,10 +190,10 @@ fn event_loop(
                 let Some(info) = signals.read_signal()? else {
                     continue;
                 };
-                let Some(signal) = stop_signal(info.ssi_signo) else {
+                let Some(ready) = signal_ready(info.ssi_signo) else {
                     continue;
                 };
-                Ready::Signal(signal)
+                ready
             } else if event.data() == TOKEN_TIMER {
                 let _ = timer.wait();
                 Ready::Timer
@@ -164,7 +203,10 @@ fn event_loop(
                 continue;
             };
             if let Err(error) = runtime.dispatch(now, ready, observer) {
-                eprintln!("magic-driver: udev monitor error: {error}");
+                tracing::warn!("udev monitor error: {error}");
+            }
+            if ready == Ready::Reload {
+                logging.set_level(runtime.config().log.level);
             }
             if runtime.is_stopped() {
                 break;
@@ -180,11 +222,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sigint_and_sigterm_stop_the_loop() {
-        assert_eq!(stop_signal(2), Some(StopSignal::Interrupt));
-        assert_eq!(stop_signal(15), Some(StopSignal::Terminate));
-        assert_eq!(stop_signal(1), None);
-        assert_eq!(stop_signal(10_000), None);
+    fn sigint_and_sigterm_stop_the_loop_and_sighup_reloads() {
+        assert_eq!(signal_ready(2), Some(Ready::Signal(StopSignal::Interrupt)));
+        assert_eq!(signal_ready(15), Some(Ready::Signal(StopSignal::Terminate)));
+        assert_eq!(signal_ready(1), Some(Ready::Reload));
+        assert_eq!(signal_ready(10), None);
+        assert_eq!(signal_ready(10_000), None);
     }
 
     #[test]
@@ -194,6 +237,7 @@ mod tests {
         assert_eq!(ready_for(TOKEN_RAW), Some(Ready::Raw));
         assert_eq!(ready_for(TOKEN_STOCK), Some(Ready::Stock));
         assert_eq!(ready_for(TOKEN_SIGNAL), None);
+        assert_eq!(ready_for(TOKEN_TIMER), Some(Ready::Timer));
         assert_eq!(ready_for(99), None);
     }
 }

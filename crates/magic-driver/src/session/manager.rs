@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use md_core::config::Config;
 use md_core::{Micros, Mode};
 
 use super::{ReleaseReason, Session, SessionFds, SessionObserver, SessionState};
@@ -9,6 +10,7 @@ use crate::io::DeviceOpener;
 pub struct SessionManager<O: DeviceOpener> {
     opener: O,
     mode: Mode,
+    config: Config,
     known: Vec<MouseNodes>,
     session: Option<Session<O>>,
 }
@@ -24,10 +26,11 @@ impl<O: DeviceOpener> std::fmt::Debug for SessionManager<O> {
 }
 
 impl<O: DeviceOpener> SessionManager<O> {
-    pub fn new(opener: O, mode: Mode) -> SessionManager<O> {
+    pub fn new(opener: O, mode: Mode, config: Config) -> SessionManager<O> {
         SessionManager {
             opener,
             mode,
+            config,
             known: Vec::new(),
             session: None,
         }
@@ -36,6 +39,29 @@ impl<O: DeviceOpener> SessionManager<O> {
     #[cfg(test)]
     pub fn session(&self) -> Option<&Session<O>> {
         self.session.as_ref()
+    }
+
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    pub fn apply_config(
+        &mut self,
+        now: Micros,
+        config: Config,
+        observer: &mut dyn SessionObserver,
+    ) {
+        if let Some(session) = self.session.as_mut() {
+            session.apply_config(now, &config, observer);
+        }
+        self.config = config;
+    }
+
+    pub fn status_line(&self) -> String {
+        self.session.as_ref().map_or_else(
+            || "waiting: no Magic Mouse 2 connected".to_owned(),
+            Session::status_line,
+        )
     }
 
     pub fn known(&self) -> &[MouseNodes] {
@@ -111,7 +137,7 @@ impl<O: DeviceOpener> SessionManager<O> {
     }
 
     fn start(&mut self, now: Micros, nodes: MouseNodes, observer: &mut dyn SessionObserver) {
-        let mut session = Session::new(nodes, self.mode, now);
+        let mut session = Session::new(nodes, self.mode, self.config.clone(), now);
         session.on_timer(now, &mut self.opener, observer);
         self.session = Some(session);
     }

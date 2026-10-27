@@ -1,0 +1,10 @@
+[Libinput][76][617][Owner’s Magic Mouse]
+NaturalScroll=true
+
+[Libinput][19780][2][magic-driver touchpad]
+DisableEventsOnExternalMouse=true
+NaturalScroll=true
+TapToClick=true
+
+[Libinput][19780][1][magic-driver pointer]
+PointerAcceleration=0.200

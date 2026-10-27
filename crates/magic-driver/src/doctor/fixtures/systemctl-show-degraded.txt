@@ -1,0 +1,4 @@
+LoadState=loaded
+ActiveState=active
+SubState=running
+StatusText=degraded: no valid hidraw report for 250 ms while the stock device is active; stock behaviour, retrying

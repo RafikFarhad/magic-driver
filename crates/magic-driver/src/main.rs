@@ -1,10 +1,14 @@
 mod cli;
 mod config_file;
+mod daemon_config;
 mod discovery;
+mod doctor;
 mod io;
+mod logging;
 mod record;
 mod replay;
 mod runtime;
+mod service;
 mod session;
 mod status;
 #[cfg(test)]
@@ -48,6 +52,7 @@ fn main() -> ExitCode {
         ),
         Some(Command::Run { debug, mode }) => run_command(RunMode::engine_mode(mode), debug),
         Some(Command::Status) => status_command(),
+        Some(Command::Doctor) => doctor_command(),
         Some(Command::Record { file }) => record_command(&file),
         Some(command) => not_implemented(command.name()),
         None => ExitCode::FAILURE,
@@ -57,13 +62,14 @@ fn main() -> ExitCode {
 fn run_command(mode: md_core::Mode, debug: bool) -> ExitCode {
     match runtime::linux::run(mode, debug) {
         Ok(signal) => {
-            eprintln!(
-                "magic-driver: stopped{}",
+            tracing::info!(
+                "stopped{}",
                 signal.map_or(String::new(), |signal| format!(" by {signal:?}"))
             );
             ExitCode::SUCCESS
         }
         Err(error) => {
+            tracing::error!("{error}");
             eprintln!("error: {error}");
             ExitCode::FAILURE
         }
@@ -80,6 +86,16 @@ fn status_command() -> ExitCode {
             eprintln!("error: cannot read the udev device list: {error}");
             ExitCode::FAILURE
         }
+    }
+}
+
+fn doctor_command() -> ExitCode {
+    let checks = doctor::collect();
+    print!("{}", doctor::render(&checks));
+    if doctor::worst(&checks) == doctor::checks::Verdict::Fail {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
 }
 

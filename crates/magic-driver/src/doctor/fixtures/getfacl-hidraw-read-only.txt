@@ -1,0 +1,6 @@
+user::rw-
+user:owner:r--
+group::---
+mask::r--
+other::---
+

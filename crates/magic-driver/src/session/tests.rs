@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
+use md_core::config::Config;
 use md_core::profile::MAGIC_MOUSE_2_BT;
 use md_core::synth::Frame;
 use md_core::testkit::{ReportBuilder, TouchRecord, touch_state};
 use md_core::{Button, Micros, Mode};
 use nix::errno::Errno;
 
+use super::selfcheck::SelfCheckFailure;
 use super::*;
 use crate::io::fake::{Call, FakeOpener, SharedWorld, world};
 
@@ -29,6 +31,10 @@ impl SessionObserver for Recorder {
     fn observe(&mut self, event: &SessionEvent<'_>) {
         let line = match event {
             SessionEvent::Acquired { .. } => "acquired".to_owned(),
+            SessionEvent::Degraded {
+                cause, retry_in, ..
+            } => format!("degraded {cause} retry {}", retry_in.as_millis()),
+            SessionEvent::Retrying { .. } => "retrying".to_owned(),
             SessionEvent::AcquireFailed {
                 step,
                 error,
@@ -62,7 +68,7 @@ impl Harness {
                 world: world.clone(),
             },
             world,
-            session: Session::new(nodes(5), mode, Micros::ZERO),
+            session: Session::new(nodes(5), mode, Config::default(), Micros::ZERO),
             observer: Recorder::default(),
         }
     }
@@ -266,15 +272,23 @@ fn acquisition_gives_up_after_two_seconds_and_degrades() {
         .open_raw_errors
         .extend(std::iter::repeat_n(Errno::EACCES, 100));
     let mut attempts = Vec::new();
-    while let Some(deadline) = harness.session.next_deadline() {
+    while harness.session.state() == SessionState::Acquiring {
+        let deadline = harness.session.next_deadline().unwrap();
         attempts.push(deadline.as_millis());
         harness.timer(deadline.as_millis());
     }
     assert_eq!(attempts, vec![0, 50, 150, 350, 750, 1550, 2000]);
     assert_eq!(harness.session.state(), SessionState::Degraded);
     assert_eq!(
-        harness.observer.lines.last().unwrap(),
-        "failed open raw device: permission denied retry None"
+        harness.observer.lines[harness.observer.lines.len() - 2..],
+        [
+            "failed open raw device: permission denied retry None",
+            "degraded cannot open raw device: permission denied after 2000 ms of retries retry 5000",
+        ]
+    );
+    assert_eq!(
+        harness.session.next_deadline(),
+        Some(Micros::from_millis(7_000))
     );
     assert!(harness.calls().is_empty());
 }
@@ -389,8 +403,11 @@ fn other_read_errors_release_and_degrade_instead_of_spinning() {
     assert_eq!(harness.session.state(), SessionState::Degraded);
     assert_eq!(harness.calls()[0], Call::Ungrab);
     assert_eq!(
-        harness.observer.lines.last().unwrap(),
-        "released device read failed"
+        harness.observer.lines[harness.observer.lines.len() - 2..],
+        [
+            "released device read failed",
+            "degraded device read failed retry 5000"
+        ]
     );
 
     let mut harness = Harness::active(Mode::RawForward);
@@ -482,8 +499,11 @@ fn virtual_device_write_failure_degrades_and_releases() {
     assert_eq!(harness.session.state(), SessionState::Degraded);
     assert_eq!(harness.calls()[0], Call::Ungrab);
     assert_eq!(
-        harness.observer.lines.last().unwrap(),
-        "released virtual device write failed"
+        harness.observer.lines[harness.observer.lines.len() - 2..],
+        [
+            "released virtual device write failed",
+            "degraded virtual device write failed retry 5000"
+        ]
     );
     assert_eq!(harness.world.borrow().raw_reports.len(), 1);
 }
@@ -510,4 +530,309 @@ fn reads_without_devices_do_nothing() {
         .on_stock_readable(Micros::from_millis(1), &mut harness.observer);
     assert!(harness.calls().is_empty());
     assert_eq!(harness.world.borrow().raw_reports.len(), 1);
+}
+
+fn stock_motion(harness: &mut Harness, ms: u64) {
+    harness
+        .world
+        .borrow_mut()
+        .stock_events
+        .push_back(Ok(vec![EvdevEvent::new(2, 0, 1), EvdevEvent::new(0, 0, 0)]));
+    harness
+        .session
+        .on_stock_readable(Micros::from_millis(ms), &mut harness.observer);
+}
+
+fn malformed_report() -> Vec<u8> {
+    let mut bytes = ReportBuilder::new().motion(1, 0).build();
+    bytes.push(0);
+    bytes
+}
+
+#[test]
+fn silent_hidraw_while_the_stock_device_moves_degrades_with_the_cause() {
+    let mut harness = Harness::active(Mode::RawForward);
+    stock_motion(&mut harness, 1_000);
+    assert_eq!(harness.session.state(), SessionState::Active);
+    assert_eq!(
+        harness.session.next_deadline(),
+        Some(Micros::from_millis(1_250))
+    );
+    stock_motion(&mut harness, 1_100);
+    assert_eq!(harness.session.state(), SessionState::Active);
+    harness.timer(1_250);
+    assert_eq!(harness.session.state(), SessionState::Degraded);
+    assert_eq!(
+        harness.session.degrade_cause(),
+        Some(DegradeCause::SelfCheck(SelfCheckFailure::NoRawReports))
+    );
+    let calls = harness.calls();
+    assert_eq!(
+        calls,
+        vec![
+            Call::Ungrab,
+            Call::CloseStock,
+            Call::DestroyTouchpad,
+            Call::DestroyPointer,
+            Call::CloseRaw,
+        ]
+    );
+    assert!(!harness.world.borrow().grabbed);
+    assert_eq!(
+        harness.observer.lines[harness.observer.lines.len() - 2..],
+        [
+            "released self-check failed: no valid hidraw report for 250 ms while the stock device is active",
+            "degraded no valid hidraw report for 250 ms while the stock device is active retry 5000",
+        ]
+    );
+    assert!(
+        harness
+            .session
+            .status_line()
+            .starts_with("degraded: no valid hidraw report")
+    );
+}
+
+#[test]
+fn stock_activity_with_matching_hidraw_reports_stays_active() {
+    let mut harness = Harness::active(Mode::RawForward);
+    for step in 0..100 {
+        let ms = 1_000 + step * 11;
+        stock_motion(&mut harness, ms);
+        harness.report(ReportBuilder::new().motion(1, 0).build());
+        harness.read(ms);
+        harness.timer(ms + 5);
+    }
+    assert_eq!(harness.session.state(), SessionState::Active);
+    assert_eq!(harness.session.next_deadline(), None);
+}
+
+#[test]
+fn stock_activity_after_a_long_idle_period_is_not_a_failure() {
+    let mut harness = Harness::active(Mode::RawForward);
+    harness.report(ReportBuilder::new().motion(1, 0).build());
+    harness.read(10);
+    stock_motion(&mut harness, 60_000);
+    assert_eq!(harness.session.state(), SessionState::Active);
+    harness.report(ReportBuilder::new().motion(1, 0).build());
+    harness.read(60_000);
+    harness.timer(60_400);
+    assert_eq!(harness.session.state(), SessionState::Active);
+}
+
+#[test]
+fn malformed_reports_above_the_threshold_degrade() {
+    let mut harness = Harness::active(Mode::RawForward);
+    for _ in 0..selfcheck::PARSE_ERROR_LIMIT - 1 {
+        harness.report(malformed_report());
+    }
+    harness.read(100);
+    assert_eq!(harness.session.state(), SessionState::Active);
+    harness.report(malformed_report());
+    harness.report(ReportBuilder::new().motion(1, 0).build());
+    harness.read(200);
+    assert_eq!(harness.session.state(), SessionState::Degraded);
+    assert!(matches!(
+        harness.session.degrade_cause(),
+        Some(DegradeCause::SelfCheck(SelfCheckFailure::ParseErrors {
+            count: 10
+        }))
+    ));
+    assert_eq!(harness.world.borrow().raw_reports.len(), 1);
+    assert_eq!(harness.calls()[0], Call::Ungrab);
+}
+
+#[test]
+fn occasional_malformed_reports_are_tolerated() {
+    let mut harness = Harness::active(Mode::RawForward);
+    for step in 0..50 {
+        harness.report(malformed_report());
+        harness.report(ReportBuilder::new().motion(1, 0).build());
+        harness.read(step * 200);
+    }
+    assert_eq!(harness.session.state(), SessionState::Active);
+}
+
+#[test]
+fn degraded_retries_after_the_minimum_dwell_and_recovers() {
+    let mut harness = Harness::active(Mode::RawForward);
+    stock_motion(&mut harness, 1_000);
+    harness.timer(1_250);
+    assert_eq!(harness.session.state(), SessionState::Degraded);
+    harness.take_calls();
+    harness.timer(2_000);
+    harness.timer(6_249);
+    assert_eq!(harness.session.state(), SessionState::Degraded);
+    assert!(harness.calls().is_empty());
+    harness.timer(6_250);
+    assert_eq!(harness.session.state(), SessionState::Active);
+    assert_eq!(
+        harness.take_calls(),
+        vec![
+            Call::OpenRaw(PathBuf::from("/dev/hidraw5")),
+            Call::CreatePointer,
+            Call::CreateTouchpad,
+            Call::OpenStock(PathBuf::from("/dev/input/event15")),
+            Call::Grab,
+        ]
+    );
+    assert_eq!(
+        harness.observer.lines[harness.observer.lines.len() - 2..],
+        ["retrying", "acquired"]
+    );
+    assert_eq!(harness.session.degrade_cause(), None);
+}
+
+#[test]
+fn acquisition_give_up_is_retried_periodically_until_permission_is_granted() {
+    let mut harness = Harness::new(Mode::RawForward);
+    harness
+        .world
+        .borrow_mut()
+        .open_raw_errors
+        .extend(std::iter::repeat_n(Errno::EACCES, 14));
+    while harness.session.state() == SessionState::Acquiring {
+        let deadline = harness.session.next_deadline().unwrap();
+        harness.timer(deadline.as_millis());
+    }
+    assert_eq!(harness.session.state(), SessionState::Degraded);
+    assert!(matches!(
+        harness.session.degrade_cause(),
+        Some(DegradeCause::AcquireGaveUp {
+            step: AcquireStep::OpenRaw,
+            kind: DeviceErrorKind::PermissionDenied
+        })
+    ));
+    assert_eq!(
+        harness.session.next_deadline(),
+        Some(Micros::from_millis(7_000))
+    );
+    harness.timer(7_000);
+    while harness.session.state() == SessionState::Acquiring {
+        let deadline = harness.session.next_deadline().unwrap();
+        harness.timer(deadline.as_millis());
+    }
+    assert_eq!(harness.session.state(), SessionState::Degraded);
+    assert_eq!(
+        harness.session.next_deadline(),
+        Some(Micros::from_millis(9_000 + 10_000))
+    );
+    harness.timer(19_000);
+    assert_eq!(harness.session.state(), SessionState::Active);
+    assert!(harness.world.borrow().grabbed);
+}
+
+#[test]
+fn repeated_failures_back_off_without_flapping() {
+    let mut harness = Harness::active(Mode::RawForward);
+    let mut now = 0;
+    let mut dwell = Vec::new();
+    let mut transitions = 0;
+    let mut previous = harness.session.state();
+    let mut degraded_at = None;
+    while now <= 300_000 {
+        if harness.session.state() == SessionState::Active {
+            stock_motion(&mut harness, now);
+        }
+        harness.timer(now);
+        let state = harness.session.state();
+        if state != previous {
+            transitions += 1;
+            if state == SessionState::Degraded {
+                degraded_at = Some(now);
+            } else if previous == SessionState::Degraded {
+                dwell.push(now - degraded_at.unwrap());
+            }
+            previous = state;
+        }
+        now += 50;
+    }
+    assert!(dwell.iter().all(|ms| *ms >= DEGRADED_MIN_DWELL.as_millis()));
+    assert_eq!(&dwell[..5], &[5_000, 10_000, 20_000, 40_000, 60_000]);
+    assert!(dwell[5..].iter().all(|ms| *ms == 60_000));
+    assert!(transitions <= 20, "{transitions} transitions");
+}
+
+#[test]
+fn a_long_stable_period_resets_the_backoff() {
+    let mut harness = Harness::active(Mode::RawForward);
+    stock_motion(&mut harness, 1_000);
+    harness.timer(1_250);
+    harness.timer(6_250);
+    assert_eq!(harness.session.state(), SessionState::Active);
+    stock_motion(&mut harness, 7_000);
+    harness.timer(7_250);
+    assert_eq!(
+        harness.session.next_deadline(),
+        Some(Micros::from_millis(17_250))
+    );
+    harness.timer(17_250);
+    assert_eq!(harness.session.state(), SessionState::Active);
+    stock_motion(&mut harness, 100_000);
+    harness.timer(100_250);
+    assert_eq!(
+        harness.session.next_deadline(),
+        Some(Micros::from_millis(105_250))
+    );
+}
+
+#[test]
+fn removal_while_degraded_cancels_the_retry() {
+    let mut harness = Harness::active(Mode::RawForward);
+    stock_motion(&mut harness, 0);
+    harness.timer(250);
+    assert_eq!(harness.session.state(), SessionState::Degraded);
+    harness
+        .session
+        .release(ReleaseReason::Removed, &mut harness.observer);
+    assert_eq!(harness.session.state(), SessionState::Absent);
+    assert_eq!(harness.session.next_deadline(), None);
+    assert_eq!(harness.session.degrade_cause(), None);
+}
+
+#[test]
+fn retry_delays_double_up_to_the_cap() {
+    let delays: Vec<u64> = (0..8)
+        .map(|level| degraded_retry_delay(level).as_millis())
+        .collect();
+    assert_eq!(
+        delays,
+        vec![
+            5_000, 10_000, 20_000, 40_000, 60_000, 60_000, 60_000, 60_000
+        ]
+    );
+    assert_eq!(degraded_retry_delay(u32::MAX), DEGRADED_MAX_RETRY_DELAY);
+}
+
+#[test]
+fn a_config_change_reaches_the_engine() {
+    let mut harness = Harness::active(Mode::RawForward);
+    let mut config = Config::default();
+    config.pointer.middle_click = false;
+    harness
+        .session
+        .apply_config(Micros::from_millis(1), &config, &mut harness.observer);
+    assert!(!harness.session.engine().config().pointer.middle_click);
+    assert_eq!(harness.session.state(), SessionState::Active);
+}
+
+#[test]
+fn status_lines_name_each_state() {
+    let mut harness = Harness::new(Mode::RawForward);
+    assert_eq!(
+        harness.session.status_line(),
+        "acquiring: Apple Magic Mouse 2 (Bluetooth) on hidraw5"
+    );
+    harness.timer(0);
+    assert_eq!(
+        harness.session.status_line(),
+        "active: Apple Magic Mouse 2 (Bluetooth) on hidraw5"
+    );
+    harness
+        .session
+        .release(ReleaseReason::DeviceGone, &mut harness.observer);
+    assert_eq!(
+        harness.session.status_line(),
+        "absent: Apple Magic Mouse 2 (Bluetooth) disconnected"
+    );
 }

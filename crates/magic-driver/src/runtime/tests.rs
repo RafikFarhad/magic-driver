@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use md_core::config::Config;
 use md_core::profile::MAGIC_MOUSE_2_BT;
 use md_core::synth::Frame;
 use md_core::testkit::{ReportBuilder, TouchRecord, touch_state};
@@ -58,6 +59,7 @@ impl Harness {
                     world: world.clone(),
                 },
                 mode,
+                Config::default(),
             ),
             world,
             clock: FakeClock::default(),
@@ -402,7 +404,9 @@ fn a_change_event_restarts_acquisition_after_giving_up() {
         .enumerated
         .push(DiscoveryEvent::MouseAppeared(nodes(5)));
     harness.start();
-    while harness.fire_timer_at_deadline().is_some() {}
+    while harness.state() == Some(SessionState::Acquiring) {
+        harness.fire_timer_at_deadline();
+    }
     assert_eq!(harness.state(), Some(SessionState::Degraded));
     harness.udev(DiscoveryEvent::MouseAppeared(nodes(5)));
     assert_eq!(harness.state(), Some(SessionState::Active));

@@ -1,0 +1,2 @@
+Libinput: event16 - Owner’s Magic Mouse: kernel bug: device supports high-resolution scroll but only low-resolution events have been received.
+Libinput: event31 - magic-driver pointer: kernel bug: device supports high-resolution scroll but only low-resolution events have been received.
