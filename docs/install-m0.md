@@ -30,6 +30,7 @@ The build needs the libudev headers, which Manjaro ships in `systemd-libs`.
 ls -l /dev/uinput /dev/hidraw*
 getfacl /dev/uinput
 ./target/release/magic-driver status
+# hid device:   /sys/devices/virtual/misc/uhid/0005:004C:0269.0013
 ```
 
 `status` is read-only. With the mouse connected it prints the HID device, the raw device and the stock device, and the access your user has to each. Write down the HID device path (the `hid device:` line), you need it in step 4.

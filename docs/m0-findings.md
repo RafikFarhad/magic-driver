@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Status | waiting for the owner: template only, no results yet |
+| Status | filled from the owner's results; fixtures and some A-6 details deferred to the E6 inspector |
 | Task | E2-T10 |
 | Filled by | the owner, following `docs/m0-checklist.md` |
-| Signed off | not yet |
+| Signed off | owner, go |
 
 Replace every `pending` value with the observed result. Keep excerpts short.
 
@@ -13,133 +13,133 @@ Replace every `pending` value with the observed result. Keep excerpts short.
 
 | Field | Value |
 |---|---|
-| Date | pending |
-| Kernel (`uname -r`) | pending |
-| Plasma version | pending |
-| KWin version | pending |
-| libinput version | pending |
-| magic-driver commit | pending |
-| `hid_magicmouse` parameters in `/etc/modprobe.d/hid_magicmouse.conf` | pending |
-| Bluetooth adapter | pending |
+| Date | 2026-10-26 |
+| Kernel (`uname -r`) | 7.1.13-2-MANJARO |
+| Plasma version | plasmashell 6.7.4 |
+| KWin version | 6.7.4 |
+| libinput version | 1.31.3 |
+| magic-driver commit | f0167d2 |
+| `hid_magicmouse` parameters in `/etc/modprobe.d/hid_magicmouse.conf` | not recorded |
+| Bluetooth adapter | TP-Link UB500 |
 
 ## Start and stop
 
 | Field | Value |
 |---|---|
-| Start and stop | pending |
-| Stop procedure | pending |
+| Start and stop | pass (owner reported working as described) |
+| Stop procedure | pass (owner reported working as described) |
 
 ## A-1 Device classification and KDE settings
 
 | Field | Value |
 |---|---|
-| A-1 list-devices output | pending |
-| A-1 udev properties of the touchpad | pending |
-| A-1 KDE lists touchpad | pending |
-| A-1 KDE lists pointer | pending |
-| A-1 setting kept across restart | pending |
-| A-1 setting kept across reconnect | pending |
-| A-1 result | pending |
+| A-1 list-devices output | not recorded |
+| A-1 udev properties of the touchpad | not recorded |
+| A-1 KDE lists touchpad | pass (owner reported working as described) |
+| A-1 KDE lists pointer | pass (owner reported working as described) |
+| A-1 setting kept across restart | pass (owner reported working as described) |
+| A-1 setting kept across reconnect | pass after the udev rule was reinstalled; the first failure was caused by the rule missing from `/etc/udev/rules.d` |
+| A-1 result | pass |
 
 ## A-2 Scroll source and axis_stop
 
 | Field | Value |
 |---|---|
-| A-2 libinput excerpt | pending |
-| A-2 wev excerpt | pending |
-| A-2 horizontal | pending |
-| A-2 result | pending |
+| A-2 libinput excerpt | `POINTER_SCROLL_FINGER ... vert 2.37/0.0* horiz -1.31/0.0* (finger)` while moving, ending with `vert 0.00/0.0* horiz 0.00/0.0* (finger)` after the lift |
+| A-2 wev excerpt | not recorded |
+| A-2 horizontal | yes, `horiz` values up to -4.21 with a final `0.00/0.0*` scroll stop |
+| A-2 result | pass; a forward slide also produced a large horizontal component, to verify with the E6 inspector |
 
 ## A-3, A-4, A-5 Per-app momentum matrix
 
 | App | Momentum after flick (A-3) | Hold stops momentum (A-4) | Hold then lift, no momentum (A-5) | Notes |
 |---|---|---|---|---|
-| Firefox | pending | pending | pending | |
-| Chromium app (name it) | pending | pending | pending | |
-| Slack | pending | pending | pending | |
-| VS Code | pending | pending | pending | |
-| Dolphin | pending | pending | pending | |
-| Kate | pending | pending | pending | |
-| Konsole | pending | pending | pending | |
+| Firefox | yes | yes | yes | |
+| Chromium app (Brave) | yes | yes | yes | |
+| Slack | yes | yes | yes | |
+| VS Code | yes | yes | yes | |
+| Dolphin | yes | yes | yes | |
+| Kate | yes | yes | yes | |
+| Konsole | yes | yes | yes | |
 
 | Field | Value |
 |---|---|
-| A-4 hold events seen | pending |
-| A-3 result | pending |
-| A-4 result | pending |
-| A-5 result | pending |
+| A-4 hold events seen | yes, GESTURE_HOLD_BEGIN 2 and GESTURE_HOLD_END 2 in libinput debug-events |
+| A-3 result | pass |
+| A-4 result | pass |
+| A-5 result | pass |
 
 ## A-6 KWin swipe gestures
 
 | Field | Value |
 |---|---|
-| A-6 Plasma version | pending |
-| A-6 finger count for desktop switch | pending |
-| A-6 finger count for overview | pending |
-| A-6 triggered by synthetic swipe | pending |
-| A-6 fast swipe | pending |
-| `advanced.gestures.kwin_swipe_fingers` to use | pending |
-| A-6 result | pending |
+| A-6 Plasma version | 6.7.4 |
+| A-6 finger count for desktop switch | not recorded; KWin switched desktop from a raw-forward 3 and 4 finger swipe |
+| A-6 finger count for overview | not recorded |
+| A-6 triggered by synthetic swipe | yes, libinput reports `GESTURE_SWIPE_BEGIN 3` and `4` from raw-forward and KWin switched desktop |
+| A-6 fast swipe | deferred to E5 |
+| `advanced.gestures.kwin_swipe_fingers` to use | keep the default 4 until E5 confirms |
+| A-6 result | pass (KWin reacts to synthetic swipes), finger counts to confirm in E5 |
 
 ## A-7 Browser back and forward
 
 | Field | Value |
 |---|---|
-| A-7 Firefox back | pending |
-| A-7 Firefox forward | pending |
-| A-7 Chromium back | pending |
-| A-7 Chromium forward | pending |
-| A-7 notes | pending |
+| A-7 Firefox back | not tested, the owner does not use Firefox |
+| A-7 Firefox forward | not tested, the owner does not use Firefox |
+| A-7 Chromium back | yes (Brave) |
+| A-7 Chromium forward | yes (Brave) |
+| A-7 notes | Brave back and forward work |
 
 ## A-8 hidraw while grabbed, cross-check with the stock device
 
 | Field | Value |
 |---|---|
-| A-8 report counts | pending |
-| A-8 cross-check line | pending |
-| A-8 differences | pending |
-| A-8 result | pending |
+| A-8 report counts | hidraw reports 1156, stock frames 1154 |
+| A-8 cross-check line | `hidraw reports=1156 dx=200 dy=336 left=17/17 right=17/17 middle=0/0 \| stock frames=1154 dx=200 dy=336 left=17/17 right=17/17 middle=0/0 \| motion match \| buttons match` |
+| A-8 differences | none in motion or buttons; 2 more hidraw reports than stock frames |
+| A-8 result | pass |
 
 ## A-9 uaccess timing on reconnect
 
 | Field | Value |
 |---|---|
-| A-9 reconnect times | pending |
-| A-9 permission retries seen | pending |
-| A-9 result | pending |
+| A-9 reconnect times | about 1 s from mouse on to takeover |
+| A-9 permission retries seen | yes, but only while the udev rule was missing from `/etc/udev/rules.d`; after reinstalling the rule the reconnect worked |
+| A-9 result | pass, with the udev rule installed |
 
 ## A-10 Geometry side effects
 
 | Field | Value |
 |---|---|
-| A-10 warnings | pending |
-| A-10 unexpected events | pending |
-| A-10 result | pending |
+| A-10 warnings | on device add: `kernel bug: missing right button, assuming it is a clickpad` (device shows `click-buttonareas-clickfinger`); in raw-forward mode: 5 x `kernel bug: Touch jump detected and discarded`, then rate limited |
+| A-10 unexpected events | in raw-forward mode single touches move the pointer (`POINTER_MOTION`, one jump of +193 units), expected for unfiltered forwarding |
+| A-10 result | partial: clickpad warning on device add, touch jumps in raw-forward mode |
 
 ## Fixtures recorded
 
 | Scenario file | Recorded | Replays offline |
 |---|---|---|
-| `idle-resting-palm.rec` | pending | pending |
-| `move-fingers-resting.rec` | pending | pending |
-| `slow-scroll.rec` | pending | pending |
-| `flick.rec` | pending | pending |
-| `horizontal-scroll.rec` | pending | pending |
-| `click-left.rec` | pending | pending |
-| `click-right.rec` | pending | pending |
-| `click-middle.rec` | pending | pending |
-| `click-while-touching.rec` | pending | pending |
-| `two-finger-swipe.rec` | pending | pending |
-| `two-finger-double-tap.rec` | pending | pending |
-| `connect-first-touch.rec` | pending | pending |
-| real `magic-mouse-2-bt.udev` capture handed over | pending | |
+| `idle-resting-palm.rec` | deferred to E6 | deferred to E6 |
+| `move-fingers-resting.rec` | deferred to E6 | deferred to E6 |
+| `slow-scroll.rec` | deferred to E6 | deferred to E6 |
+| `flick.rec` | deferred to E6 | deferred to E6 |
+| `horizontal-scroll.rec` | deferred to E6 | deferred to E6 |
+| `click-left.rec` | deferred to E6 | deferred to E6 |
+| `click-right.rec` | deferred to E6 | deferred to E6 |
+| `click-middle.rec` | deferred to E6 | deferred to E6 |
+| `click-while-touching.rec` | deferred to E6 | deferred to E6 |
+| `two-finger-swipe.rec` | deferred to E6 | deferred to E6 |
+| `two-finger-double-tap.rec` | deferred to E6 | deferred to E6 |
+| `connect-first-touch.rec` | deferred to E6 | deferred to E6 |
+| real `magic-mouse-2-bt.udev` capture handed over | deferred to E6 | |
 
 ## Decision
 
 | Field | Value |
 |---|---|
-| Decision (go, adjust, stop) | pending |
-| A-2 or A-3 failed broadly | pending |
-| Fallback decision (only if A-2 or A-3 failed broadly, ARCHITECTURE section 9) | pending |
-| Architecture adjustments to record in ARCHITECTURE section 11 | pending |
-| Signed off by and date | pending |
+| Decision (go, adjust, stop) | go |
+| A-2 or A-3 failed broadly | no |
+| Fallback decision (only if A-2 or A-3 failed broadly, ARCHITECTURE section 9) | not needed |
+| Architecture adjustments to record in ARCHITECTURE section 11 | open: whether to add `INPUT_PROP_BUTTONPAD` to the virtual touchpad (D4) to silence the clickpad warning; none decided |
+| Signed off by and date | Farhad, 2026-10-26 |
