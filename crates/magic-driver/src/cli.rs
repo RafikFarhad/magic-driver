@@ -90,6 +90,7 @@ pub enum ConfigCommand {
     Defaults,
 }
 
+#[cfg(test)]
 impl Command {
     pub fn name(&self) -> &'static str {
         match self {
@@ -107,6 +108,8 @@ impl Command {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use clap::CommandFactory;
 
@@ -136,7 +139,7 @@ mod tests {
 
     #[test]
     fn all_architecture_subcommands_parse() {
-        let cases: [&[&str]; 16] = [
+        let cases: [&[&str]; 17] = [
             &["run"],
             &["run", "--debug"],
             &["run", "--mode", "raw-forward"],
@@ -152,6 +155,7 @@ mod tests {
             &["config", "test"],
             &["config", "defaults"],
             &["trace"],
+            &["inspect"],
             &["inspect", "--replay", "in.rec"],
         ];
         for args in cases {
@@ -197,6 +201,19 @@ mod tests {
         assert_eq!(mode(&["run", "--mode", "scroll-probe"]), Mode::ScrollProbe);
         assert!(parse(&["run", "--mode", "pointer-only"]).is_err());
         assert!(parse(&["run", "--mode", "normal"]).is_err());
+    }
+
+    #[test]
+    fn inspect_takes_an_optional_recording() {
+        assert!(matches!(
+            parse(&["inspect"]).unwrap().command,
+            Some(Command::Inspect { replay: None })
+        ));
+        assert!(matches!(
+            parse(&["inspect", "--replay", "x.rec"]).unwrap().command,
+            Some(Command::Inspect { replay: Some(path) }) if path == Path::new("x.rec")
+        ));
+        assert!(parse(&["inspect", "x.rec"]).is_err());
     }
 
     #[test]

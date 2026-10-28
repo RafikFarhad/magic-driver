@@ -38,7 +38,7 @@ scripts/install.sh
 
 It does, in order:
 
-1. `cargo build --release --locked` (or use `--binary PATH` for a prebuilt binary).
+1. `cargo build --release --locked -p magic-driver` (or use `--binary PATH` for a prebuilt binary).
 2. With `sudo`: installs `/usr/local/bin/magic-driver`, `/etc/udev/rules.d/70-magic-driver.rules` and `/etc/modules-load.d/magic-driver.conf` (loads `uinput` on boot).
 3. With `sudo`: `udevadm control --reload`, then re-triggers only the Magic Mouse 2 HID device (`--parent-match`) and `/sys/devices/virtual/misc/uinput`.
 4. Installs the user unit `~/.config/systemd/user/magic-driver.service`.
@@ -52,6 +52,17 @@ Then check:
 magic-driver status
 magic-driver doctor
 ```
+
+### Optional: the inspector
+
+The diagnostic window `magic-driver-inspector` (`magic-driver inspect`, see `docs/inspector.md`) is not installed by default. To add it:
+
+```sh
+scripts/install.sh --dry-run --with-inspector
+scripts/install.sh --with-inspector
+```
+
+This also builds `-p magic-driver-inspector` and installs `/usr/local/bin/magic-driver-inspector` with `sudo`, listed in the manifest, so `scripts/uninstall.sh` removes it again. With `--binary PATH` the inspector is taken from the `magic-driver-inspector` file next to that binary, or from `--inspector-binary PATH`. Reinstalling later without `--with-inspector` removes an inspector that an earlier install put there, so the installed files always match the flags.
 
 `status` shows the service state and the daemon's own status line (for example `active: Apple Magic Mouse 2 (Bluetooth) on hidraw5`), the mouse nodes, the virtual devices and the config. `doctor` prints `pass`, `warn` or `fail` for each check with a fix hint. Both only read.
 

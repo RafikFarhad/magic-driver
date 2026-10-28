@@ -276,3 +276,138 @@ fn unknown_arguments_are_rejected_before_any_action() {
     }
     assert_eq!(sandbox.guarded_calls(), "");
 }
+
+#[test]
+fn install_dry_run_includes_the_inspector_only_with_the_flag() {
+    let sandbox = Sandbox::new();
+    let inspector = "/usr/local/bin/magic-driver-inspector".to_owned();
+
+    let (code, plain, stderr) = sandbox.run("install.sh", &["--dry-run"], true);
+    assert_eq!(code, 0, "{plain}{stderr}");
+    assert!(!prefixed(&plain, "install: ").contains(&inspector));
+    assert!(!plain.contains("magic-driver-inspector"));
+    assert!(plain.contains("dry-run: cargo build --release --locked --manifest-path"));
+    assert!(plain.contains(" -p magic-driver\n"));
+
+    let (code, stdout, stderr) =
+        sandbox.run("install.sh", &["--dry-run", "--with-inspector"], true);
+    assert_eq!(code, 0, "{stdout}{stderr}");
+    let installed: BTreeSet<_> = prefixed(&stdout, "install: ").into_iter().collect();
+    let without: BTreeSet<_> = prefixed(&plain, "install: ").into_iter().collect();
+    let added: Vec<_> = installed.difference(&without).cloned().collect();
+    assert_eq!(added, std::slice::from_ref(&inspector));
+    assert!(prefixed(&stdout, "manifest entry: ").contains(&format!("system {inspector}")));
+    assert!(stdout.contains(" -p magic-driver -p magic-driver-inspector\n"));
+    let build_inspector = format!(
+        "{}/target/release/magic-driver-inspector {}{inspector}",
+        repo_root().display(),
+        sandbox.destdir().display()
+    );
+    assert!(
+        stdout.contains(&build_inspector),
+        "{build_inspector} missing in\n{stdout}"
+    );
+    assert_eq!(sandbox.guarded_calls(), "");
+    assert!(!sandbox.destdir().exists());
+}
+
+#[test]
+fn a_prebuilt_inspector_is_taken_next_to_the_binary_or_from_its_option() {
+    let sandbox = Sandbox::new();
+    let (code, stdout, stderr) = sandbox.run(
+        "install.sh",
+        &[
+            "--dry-run",
+            "--binary",
+            "/opt/md/magic-driver",
+            "--with-inspector",
+        ],
+        false,
+    );
+    assert_eq!(code, 0, "{stdout}{stderr}");
+    assert!(stdout.contains(
+        "dry-run: sudo install -D -m 0755 -o root -g root /opt/md/magic-driver-inspector /usr/local/bin/magic-driver-inspector"
+    ));
+    assert!(!stdout.contains("cargo build"));
+
+    let (code, stdout, stderr) = sandbox.run(
+        "install.sh",
+        &[
+            "--dry-run",
+            "--binary",
+            "/opt/md/magic-driver",
+            "--with-inspector",
+            "--inspector-binary",
+            "/opt/other/inspector",
+        ],
+        false,
+    );
+    assert_eq!(code, 0, "{stdout}{stderr}");
+    assert!(stdout.contains(
+        "dry-run: sudo install -D -m 0755 -o root -g root /opt/other/inspector /usr/local/bin/magic-driver-inspector"
+    ));
+
+    let (code, stdout, stderr) = sandbox.run(
+        "install.sh",
+        &["--dry-run", "--inspector-binary", "/opt/other/inspector"],
+        false,
+    );
+    assert_eq!(code, 1);
+    assert_eq!(stdout, "");
+    assert!(stderr.contains("--inspector-binary needs --with-inspector"));
+    assert_eq!(sandbox.guarded_calls(), "");
+}
+
+#[test]
+fn uninstall_dry_run_removes_the_inspector_when_it_was_installed() {
+    let sandbox = Sandbox::new();
+    let (code, install_out, _) =
+        sandbox.run("install.sh", &["--dry-run", "--with-inspector"], true);
+    assert_eq!(code, 0);
+    sandbox.write_manifest(&prefixed(&install_out, "manifest entry: "));
+    let before = file_tree(&sandbox.destdir());
+
+    let (code, stdout, stderr) = sandbox.run("uninstall.sh", &["--dry-run"], true);
+    assert_eq!(code, 0, "{stdout}{stderr}");
+    let removed: BTreeSet<_> = prefixed(&stdout, "remove: ").into_iter().collect();
+    assert!(removed.contains("/usr/local/bin/magic-driver-inspector"));
+    let installed: BTreeSet<_> = prefixed(&install_out, "install: ").into_iter().collect();
+    assert!(installed.is_subset(&removed));
+    assert!(stdout.contains(&format!(
+        "dry-run: sudo rm -f -- {}/usr/local/bin/magic-driver-inspector",
+        sandbox.destdir().display()
+    )));
+    assert_eq!(sandbox.guarded_calls(), "");
+    assert_eq!(file_tree(&sandbox.destdir()), before);
+}
+
+#[test]
+fn reinstalling_without_the_flag_removes_an_earlier_inspector() {
+    let sandbox = Sandbox::new();
+    let (code, install_out, _) =
+        sandbox.run("install.sh", &["--dry-run", "--with-inspector"], true);
+    assert_eq!(code, 0);
+    sandbox.write_manifest(&prefixed(&install_out, "manifest entry: "));
+    let before = file_tree(&sandbox.destdir());
+
+    let (code, stdout, stderr) = sandbox.run("install.sh", &["--dry-run"], true);
+    assert_eq!(code, 0, "{stdout}{stderr}");
+    assert!(stdout.contains(
+        "remove: /usr/local/bin/magic-driver-inspector (installed before, not requested now)"
+    ));
+    assert!(stdout.contains(&format!(
+        "dry-run: sudo rm -f -- {}/usr/local/bin/magic-driver-inspector",
+        sandbox.destdir().display()
+    )));
+    assert!(
+        !prefixed(&stdout, "manifest entry: ")
+            .iter()
+            .any(|entry| entry.contains("inspector"))
+    );
+
+    let (code, stdout, _) = sandbox.run("install.sh", &["--dry-run", "--with-inspector"], true);
+    assert_eq!(code, 0);
+    assert!(!stdout.contains("not requested now"));
+    assert_eq!(sandbox.guarded_calls(), "");
+    assert_eq!(file_tree(&sandbox.destdir()), before);
+}

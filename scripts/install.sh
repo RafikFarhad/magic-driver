@@ -5,10 +5,12 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 destdir=${DESTDIR:-}
 dry_run=0
 binary=""
+with_inspector=0
+inspector_binary=""
 
 usage() {
     cat <<EOF
-Usage: scripts/install.sh [--dry-run] [--binary PATH]
+Usage: scripts/install.sh [--dry-run] [--binary PATH] [--with-inspector [--inspector-binary PATH]]
 
 Installs magic-driver for the current user:
   /usr/local/bin/magic-driver                    (sudo)
@@ -20,10 +22,17 @@ then reloads udev, re-triggers only the Magic Mouse 2 and uinput nodes,
 and enables and starts the user service. Every created file is written to
 the manifest \$XDG_DATA_HOME/magic-driver/install-manifest.
 
+With --with-inspector it also installs the optional diagnostic window
+  /usr/local/bin/magic-driver-inspector          (sudo)
+which \`magic-driver inspect\` runs. It is not installed by default.
+
 Options:
-  --dry-run      print every action without performing it
-  --binary PATH  install a prebuilt binary instead of running cargo build
-  -h, --help     show this help
+  --dry-run                print every action without performing it
+  --binary PATH            install a prebuilt binary instead of running cargo build
+  --with-inspector         also build and install magic-driver-inspector
+  --inspector-binary PATH  prebuilt inspector (default with --binary: the
+                           magic-driver-inspector file next to it)
+  -h, --help               show this help
 
 DESTDIR, when set, is prefixed to every file path and skips the udev and
 systemd commands, for staged installs and tests.
@@ -64,6 +73,13 @@ while (($# > 0)); do
             shift
             ;;
         --binary=*) binary=${1#--binary=} ;;
+        --with-inspector) with_inspector=1 ;;
+        --inspector-binary)
+            (($# >= 2)) || die "--inspector-binary needs a path"
+            inspector_binary=$2
+            shift
+            ;;
+        --inspector-binary=*) inspector_binary=${1#--inspector-binary=} ;;
         -h | --help)
             usage
             exit 0
@@ -72,6 +88,10 @@ while (($# > 0)); do
     esac
     shift
 done
+
+if [[ -n $inspector_binary ]] && ((!with_inspector)); then
+    die "--inspector-binary needs --with-inspector"
+fi
 
 if ((EUID == 0)); then
     die "run this as your normal user, not as root; it calls sudo only where needed"
@@ -82,6 +102,7 @@ config_home=${XDG_CONFIG_HOME:-$HOME/.config}
 data_home=${XDG_DATA_HOME:-$HOME/.local/share}
 
 bin_path=/usr/local/bin/magic-driver
+inspector_path=/usr/local/bin/magic-driver-inspector
 rule_path=/etc/udev/rules.d/70-magic-driver.rules
 modules_path=/etc/modules-load.d/magic-driver.conf
 unit_path=$config_home/systemd/user/magic-driver.service
@@ -104,16 +125,33 @@ install_user_file() {
     manifest+=("user $target")
 }
 
+packages=(-p magic-driver)
+if ((with_inspector)); then
+    packages+=(-p magic-driver-inspector)
+fi
 if [[ -z $binary ]]; then
-    note "build: cargo build --release --locked"
-    run cargo build --release --locked --manifest-path "$repo_root/Cargo.toml"
+    note "build: cargo build --release --locked ${packages[*]}"
+    run cargo build --release --locked --manifest-path "$repo_root/Cargo.toml" "${packages[@]}"
     binary=$repo_root/target/release/magic-driver
+fi
+if ((with_inspector)) && [[ -z $inspector_binary ]]; then
+    inspector_binary=$(dirname "$binary")/magic-driver-inspector
 fi
 if ((!dry_run)) && [[ ! -x $binary ]]; then
     die "binary $binary does not exist or is not executable"
 fi
+if ((!dry_run && with_inspector)) && [[ ! -x $inspector_binary ]]; then
+    die "inspector binary $inspector_binary does not exist or is not executable"
+fi
 
 install_system_file 0755 "$binary" "$bin_path"
+if ((with_inspector)); then
+    install_system_file 0755 "$inspector_binary" "$inspector_path"
+fi
+if ((!with_inspector)) && [[ -f $destdir$manifest_path ]] && grep -qxF "system $inspector_path" "$destdir$manifest_path"; then
+    note "remove: $inspector_path (installed before, not requested now)"
+    run sudo rm -f -- "$destdir$inspector_path"
+fi
 install_system_file 0644 "$repo_root/dist/70-magic-driver.rules" "$rule_path"
 install_system_file 0644 "$repo_root/dist/modules-load.d/magic-driver.conf" "$modules_path"
 

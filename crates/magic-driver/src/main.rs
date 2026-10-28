@@ -3,6 +3,7 @@ mod config_file;
 mod daemon_config;
 mod discovery;
 mod doctor;
+mod inspect;
 mod io;
 mod logging;
 mod record;
@@ -56,7 +57,7 @@ fn main() -> ExitCode {
         Some(Command::Doctor) => doctor_command(),
         Some(Command::Record { file }) => record_command(&file),
         Some(Command::Trace) => trace_command(),
-        Some(command) => not_implemented(command.name()),
+        Some(Command::Inspect { replay }) => inspect_command(replay.as_deref()),
         None => ExitCode::FAILURE,
     }
 }
@@ -116,6 +117,19 @@ fn trace_command() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn inspect_command(replay: Option<&Path>) -> ExitCode {
+    let current_exe = env::current_exe().ok();
+    let path_var = env::var_os("PATH");
+    let Some(inspector) = inspect::find_inspector(current_exe.as_deref(), path_var.as_deref())
+    else {
+        eprintln!("{}", inspect::INSTALL_HINT);
+        return ExitCode::FAILURE;
+    };
+    let error = inspect::exec_inspector(&inspector, &inspect::inspector_args(replay));
+    eprintln!("error: cannot start {}: {error}", inspector.display());
+    ExitCode::FAILURE
 }
 
 fn record_command(path: &Path) -> ExitCode {

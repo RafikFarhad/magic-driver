@@ -11,7 +11,8 @@ Usage: scripts/uninstall.sh [--dry-run] [--purge]
 
 Stops and disables the magic-driver user service, removes every file listed
 in \$XDG_DATA_HOME/magic-driver/install-manifest (with sudo for system
-files), reloads udev and re-triggers the Magic Mouse 2 and uinput nodes.
+files, including magic-driver-inspector when it was installed with
+--with-inspector), reloads udev and re-triggers the Magic Mouse 2 and uinput nodes.
 The user config in \$XDG_CONFIG_HOME/magic-driver/ is kept unless --purge
 is given.
 
@@ -72,6 +73,7 @@ config_home=${XDG_CONFIG_HOME:-$HOME/.config}
 data_home=${XDG_DATA_HOME:-$HOME/.local/share}
 
 bin_path=/usr/local/bin/magic-driver
+inspector_path=/usr/local/bin/magic-driver-inspector
 rule_path=/etc/udev/rules.d/70-magic-driver.rules
 modules_path=/etc/modules-load.d/magic-driver.conf
 unit_path=$config_home/systemd/user/magic-driver.service
@@ -87,7 +89,7 @@ while IFS= read -r line || [[ -n $line ]]; do
     kind=${line%% *}
     path=${line#* }
     case "$kind:$path" in
-        "system:$bin_path" | "system:$rule_path" | "system:$modules_path" | "user:$unit_path") ;;
+        "system:$bin_path" | "system:$inspector_path" | "system:$rule_path" | "system:$modules_path" | "user:$unit_path") ;;
         *) die "refusing to act on unexpected manifest entry: $line" ;;
     esac
     entries+=("$kind $path")
