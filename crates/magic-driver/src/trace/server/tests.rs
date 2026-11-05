@@ -397,3 +397,46 @@ fn session_events_become_session_records() {
         .is_none()
     );
 }
+
+#[test]
+fn raw_recovery_events_become_session_records() {
+    let nodes = crate::discovery::MouseNodes {
+        key: PathBuf::from("/sys/x"),
+        hidraw: PathBuf::from("/dev/hidraw5"),
+        evdev: PathBuf::from("/dev/input/event16"),
+        profile: &MAGIC_MOUSE_2_BT,
+    };
+    let failure = crate::session::RawFailure::SelfCheck(
+        crate::session::selfcheck::SelfCheckFailure::NoRawReports,
+    );
+    let lost = crate::trace::session_record(
+        md_core::Micros::new(9),
+        &crate::session::SessionEvent::RawLost {
+            nodes: &nodes,
+            failure,
+            retry_in: md_core::Micros::from_millis(50),
+            attempts: 0,
+            elapsed: md_core::Micros::ZERO,
+        },
+    )
+    .unwrap();
+    assert!(
+        lost.to_string()
+            .starts_with("9 session recovering: /dev/hidraw5: self-check failed: no hidraw report"),
+        "{lost}"
+    );
+    let recovered = crate::trace::session_record(
+        md_core::Micros::new(10),
+        &crate::session::SessionEvent::RawRecovered {
+            nodes: &nodes,
+            failure,
+            attempts: 1,
+            elapsed: md_core::Micros::from_millis(90),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        recovered.to_string(),
+        "10 session active: /dev/hidraw5: raw reports flow again after 90 ms"
+    );
+}

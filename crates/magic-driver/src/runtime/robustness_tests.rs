@@ -620,3 +620,131 @@ fn debug_mode_logs_one_line_per_report_at_debug_level() {
         .count();
     assert_eq!(info, 2);
 }
+
+fn push_raw_motion(harness: &Harness) {
+    harness
+        .world
+        .borrow_mut()
+        .raw_reports
+        .push_back(Ok(ReportBuilder::new().motion(1, 0).build()));
+}
+
+fn push_stock_motion(harness: &Harness) {
+    harness
+        .world
+        .borrow_mut()
+        .stock_events
+        .push_back(Ok(vec![EvdevEvent::new(2, 0, 1), EvdevEvent::new(0, 0, 0)]));
+}
+
+fn active_harness() -> Harness {
+    let mut harness = Harness::new(Some(Duration::from_secs(2)));
+    harness
+        .world
+        .borrow_mut()
+        .enumerated
+        .push(DiscoveryEvent::MouseAppeared(nodes()));
+    harness.start();
+    assert_eq!(harness.state(), Some(SessionState::Active));
+    harness.take_calls();
+    harness
+}
+
+#[test]
+fn raw_dispatched_before_stock_at_the_end_of_every_burst_keeps_the_takeover() {
+    let mut harness = active_harness();
+    let records = capture_at(LevelFilter::WARN, || {
+        for burst in 0..20_u64 {
+            let base = 1_000 + burst * 3_000;
+            for step in 0..40 {
+                push_raw_motion(&harness);
+                push_stock_motion(&harness);
+                let ms = base + step * 11;
+                harness.at(ms).dispatch(Ready::Raw);
+                harness.at(ms).dispatch(Ready::Stock);
+            }
+            harness.loop_until(base + 3_000);
+        }
+    });
+    assert_eq!(records, Vec::<crate::logging::capture::Record>::new());
+    assert_eq!(harness.state(), Some(SessionState::Active));
+    assert!(harness.world.borrow().grabbed);
+    let calls = harness.take_calls();
+    assert!(
+        !calls.iter().any(|call| matches!(
+            call,
+            Call::Ungrab | Call::CloseRaw | Call::DestroyPointer | Call::DestroyTouchpad
+        )),
+        "{calls:?}"
+    );
+    assert!(
+        harness
+            .statuses()
+            .iter()
+            .all(|line| !line.starts_with("recovering") && !line.starts_with("degraded"))
+    );
+}
+
+#[test]
+fn a_silent_hidraw_keeps_the_takeover_and_logs_only_problems_at_warn_or_error() {
+    let mut harness = active_harness();
+    let mut observer = LogObserver::new(false);
+    let records = capture_at(LevelFilter::INFO, || {
+        let mut ms = 1_000;
+        while ms < 1_700 {
+            push_stock_motion(&harness);
+            harness.now = Micros::from_millis(ms);
+            harness
+                .runtime
+                .dispatch(harness.now, Ready::Stock, &mut observer)
+                .unwrap();
+            harness.runtime.run_due(harness.now, &mut observer);
+            ms += 10;
+        }
+        push_raw_motion(&harness);
+        harness
+            .runtime
+            .dispatch(Micros::from_millis(1_700), Ready::Raw, &mut observer)
+            .unwrap();
+    });
+    assert_eq!(harness.state(), Some(SessionState::Active));
+    assert!(harness.world.borrow().grabbed);
+    let calls = harness.take_calls();
+    assert!(!calls.contains(&Call::Ungrab), "{calls:?}");
+    assert!(!calls.contains(&Call::DestroyTouchpad), "{calls:?}");
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| matches!(call, Call::OpenRaw(_)))
+            .count(),
+        2
+    );
+    let levels: Vec<_> = records
+        .iter()
+        .map(|record| (record.level, record.message.split(':').next().unwrap_or("")))
+        .collect();
+    assert_eq!(
+        levels,
+        [
+            (Level::ERROR, "lost the raw stream of /dev/hidraw5"),
+            (Level::WARN, "recovered /dev/hidraw5"),
+        ],
+        "{records:?}"
+    );
+    assert!(
+        records[1]
+            .message
+            .contains("raw reports flow again 450 ms after")
+    );
+    let statuses = harness.statuses();
+    assert!(
+        statuses
+            .iter()
+            .any(|line| line.starts_with("recovering: Apple Magic Mouse 2 (Bluetooth) on hidraw5")),
+        "{statuses:?}"
+    );
+    assert_eq!(
+        statuses.last().unwrap(),
+        "active: Apple Magic Mouse 2 (Bluetooth) on hidraw5"
+    );
+}

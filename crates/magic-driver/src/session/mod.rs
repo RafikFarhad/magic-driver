@@ -25,6 +25,8 @@ pub const MAX_REPORTS_PER_WAKE: usize = 64;
 pub const DEGRADED_MIN_DWELL: Micros = Micros::from_millis(5_000);
 pub const DEGRADED_MAX_RETRY_DELAY: Micros = Micros::from_millis(60_000);
 pub const STABLE_ACTIVE: Micros = Micros::from_millis(60_000);
+pub const RAW_REOPEN_FIRST_DELAY: Micros = Micros::from_millis(50);
+pub const RAW_REOPEN_MAX_DELAY: Micros = Micros::from_millis(5_000);
 
 static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
@@ -55,7 +57,6 @@ pub enum ReleaseReason {
     Shutdown,
     ReadFailed,
     VirtualDeviceFailed,
-    SelfCheck(SelfCheckFailure),
 }
 
 impl fmt::Display for ReleaseReason {
@@ -67,7 +68,6 @@ impl fmt::Display for ReleaseReason {
             ReleaseReason::Shutdown => f.write_str("shutdown"),
             ReleaseReason::ReadFailed => f.write_str("device read failed"),
             ReleaseReason::VirtualDeviceFailed => f.write_str("virtual device write failed"),
-            ReleaseReason::SelfCheck(failure) => write!(f, "self-check failed: {failure}"),
         }
     }
 }
@@ -95,7 +95,6 @@ impl fmt::Display for AcquireStep {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DegradeCause {
-    SelfCheck(SelfCheckFailure),
     ReadFailed,
     VirtualDeviceFailed,
     AcquireGaveUp {
@@ -107,7 +106,6 @@ pub enum DegradeCause {
 impl DegradeCause {
     fn release_reason(self) -> Option<ReleaseReason> {
         match self {
-            DegradeCause::SelfCheck(failure) => Some(ReleaseReason::SelfCheck(failure)),
             DegradeCause::ReadFailed => Some(ReleaseReason::ReadFailed),
             DegradeCause::VirtualDeviceFailed => Some(ReleaseReason::VirtualDeviceFailed),
             DegradeCause::AcquireGaveUp { .. } => None,
@@ -118,7 +116,6 @@ impl DegradeCause {
 impl fmt::Display for DegradeCause {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DegradeCause::SelfCheck(failure) => write!(f, "{failure}"),
             DegradeCause::ReadFailed => f.write_str("device read failed"),
             DegradeCause::VirtualDeviceFailed => f.write_str("virtual device write failed"),
             DegradeCause::AcquireGaveUp { step, kind } => write!(
@@ -126,6 +123,21 @@ impl fmt::Display for DegradeCause {
                 "cannot {step}: {kind} after {} ms of retries",
                 ACQUIRE_WINDOW.as_millis()
             ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RawFailure {
+    SelfCheck(SelfCheckFailure),
+    ReadFailed(DeviceErrorKind),
+}
+
+impl fmt::Display for RawFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RawFailure::SelfCheck(failure) => write!(f, "self-check failed: {failure}"),
+            RawFailure::ReadFailed(kind) => write!(f, "hidraw read failed: {kind}"),
         }
     }
 }
@@ -155,6 +167,26 @@ pub enum SessionEvent<'a> {
     Retrying {
         nodes: &'a MouseNodes,
         cause: DegradeCause,
+    },
+    RawLost {
+        nodes: &'a MouseNodes,
+        failure: RawFailure,
+        retry_in: Micros,
+        attempts: u32,
+        elapsed: Micros,
+    },
+    RawReopenFailed {
+        nodes: &'a MouseNodes,
+        error: &'a DeviceError,
+        retry_in: Micros,
+        attempts: u32,
+        elapsed: Micros,
+    },
+    RawRecovered {
+        nodes: &'a MouseNodes,
+        failure: RawFailure,
+        attempts: u32,
+        elapsed: Micros,
     },
     Report {
         bytes: &'a [u8],
@@ -212,8 +244,35 @@ struct Degradation {
     retry_at: Micros,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RawRecovery {
+    failure: RawFailure,
+    started: Micros,
+    reopen_at: Option<Micros>,
+    delay: Micros,
+    attempts: u32,
+    next_notice: Micros,
+}
+
+impl RawRecovery {
+    fn schedule_reopen(&mut self, now: Micros) -> Micros {
+        let retry_in = self.delay;
+        self.reopen_at = Some(now + retry_in);
+        self.delay = (self.delay + self.delay).min(RAW_REOPEN_MAX_DELAY);
+        retry_in
+    }
+
+    fn notice_due(&mut self, now: Micros) -> bool {
+        if now < self.next_notice {
+            return false;
+        }
+        self.next_notice = now + RAW_REOPEN_MAX_DELAY;
+        true
+    }
+}
+
 struct Devices<O: DeviceOpener> {
-    raw: O::Raw,
+    raw: Option<O::Raw>,
     pointer: O::Pointer,
     touchpad: O::Touchpad,
     stock: O::Stock,
@@ -227,6 +286,7 @@ pub struct Session<O: DeviceOpener> {
     degrade_level: u32,
     active_since: Option<Micros>,
     self_check: SelfCheck,
+    raw_recovery: Option<RawRecovery>,
     devices: Option<Devices<O>>,
     engine: Engine,
     generation: u64,
@@ -242,6 +302,7 @@ impl<O: DeviceOpener> fmt::Debug for Session<O> {
             .field("state", &self.state)
             .field("acquisition", &self.acquisition)
             .field("degradation", &self.degradation)
+            .field("raw_recovery", &self.raw_recovery)
             .field("generation", &self.generation)
             .finish_non_exhaustive()
     }
@@ -265,6 +326,7 @@ impl<O: DeviceOpener> Session<O> {
             degrade_level: 0,
             active_since: None,
             self_check: SelfCheck::default(),
+            raw_recovery: None,
             devices: None,
             engine,
             generation: 0,
@@ -291,6 +353,11 @@ impl<O: DeviceOpener> Session<O> {
         self.degradation.map(|degradation| degradation.cause)
     }
 
+    #[cfg(test)]
+    pub fn raw_failure(&self) -> Option<RawFailure> {
+        self.raw_recovery.map(|recovery| recovery.failure)
+    }
+
     pub fn status_line(&self) -> String {
         let node = self.nodes.hidraw.file_name().map_or_else(
             || self.nodes.hidraw.display().to_string(),
@@ -303,7 +370,13 @@ impl<O: DeviceOpener> Session<O> {
             }
             (SessionState::Degraded, None) => "degraded: stock behaviour".to_owned(),
             (SessionState::Acquiring, _) => format!("acquiring: {name} on {node}"),
-            (SessionState::Active, _) => format!("active: {name} on {node}"),
+            (SessionState::Active, _) => match self.raw_recovery {
+                Some(recovery) => format!(
+                    "recovering: {name} on {node}, {}; reopening the raw device",
+                    recovery.failure
+                ),
+                None => format!("active: {name} on {node}"),
+            },
             (SessionState::Absent, _) => format!("absent: {name} disconnected"),
         }
     }
@@ -319,7 +392,8 @@ impl<O: DeviceOpener> Session<O> {
             raw: self
                 .devices
                 .as_ref()
-                .and_then(|devices| devices.raw.poll_fd()),
+                .and_then(|devices| devices.raw.as_ref())
+                .and_then(RawSource::poll_fd),
             stock: self
                 .devices
                 .as_ref()
@@ -330,9 +404,10 @@ impl<O: DeviceOpener> Session<O> {
     pub fn next_deadline(&self) -> Option<Micros> {
         match self.state {
             SessionState::Acquiring => self.acquisition.map(|acquisition| acquisition.next_attempt),
-            SessionState::Active => {
-                earliest(self.engine.next_deadline(), self.self_check.deadline())
-            }
+            SessionState::Active => earliest(
+                self.engine.next_deadline(),
+                self.raw_recovery.and_then(|recovery| recovery.reopen_at),
+            ),
             SessionState::Degraded => self.degradation.map(|degradation| degradation.retry_at),
             SessionState::Absent => None,
         }
@@ -349,9 +424,12 @@ impl<O: DeviceOpener> Session<O> {
                 }
             }
             SessionState::Active => {
-                if let Some(failure) = self.self_check.on_timer(now) {
-                    self.degrade(now, DegradeCause::SelfCheck(failure), observer);
-                    return;
+                if self
+                    .raw_recovery
+                    .and_then(|recovery| recovery.reopen_at)
+                    .is_some_and(|reopen_at| reopen_at <= now)
+                {
+                    self.reopen_raw(now, opener, observer);
                 }
                 if self
                     .engine
@@ -461,12 +539,87 @@ impl<O: DeviceOpener> Session<O> {
         }
     }
 
+    fn reopen_raw(&mut self, now: Micros, opener: &mut O, observer: &mut dyn SessionObserver) {
+        let (Some(devices), Some(recovery)) = (self.devices.as_mut(), self.raw_recovery.as_mut())
+        else {
+            return;
+        };
+        recovery.attempts += 1;
+        match opener.open_raw(&self.nodes.hidraw) {
+            Ok(raw) => {
+                devices.raw = Some(raw);
+                recovery.reopen_at = None;
+                self.generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+                self.self_check.reset();
+            }
+            Err(error) => {
+                let retry_in = recovery.schedule_reopen(now);
+                if recovery.notice_due(now) {
+                    observer.observe(&SessionEvent::RawReopenFailed {
+                        nodes: &self.nodes,
+                        error: &error,
+                        retry_in,
+                        attempts: recovery.attempts,
+                        elapsed: now.saturating_sub(recovery.started),
+                    });
+                }
+            }
+        }
+    }
+
+    fn lose_raw(&mut self, now: Micros, failure: RawFailure, observer: &mut dyn SessionObserver) {
+        let Some(devices) = self.devices.as_mut() else {
+            return;
+        };
+        drop(devices.raw.take());
+        self.self_check.reset();
+        self.engine.handle(Input::Reset, &mut self.outputs);
+        if !self.flush_outputs(now, observer) {
+            return;
+        }
+        let recovery = self.raw_recovery.get_or_insert(RawRecovery {
+            failure,
+            started: now,
+            reopen_at: None,
+            delay: RAW_REOPEN_FIRST_DELAY,
+            attempts: 0,
+            next_notice: now,
+        });
+        recovery.failure = failure;
+        let retry_in = recovery.schedule_reopen(now);
+        if recovery.notice_due(now) {
+            observer.observe(&SessionEvent::RawLost {
+                nodes: &self.nodes,
+                failure,
+                retry_in,
+                attempts: recovery.attempts,
+                elapsed: now.saturating_sub(recovery.started),
+            });
+        }
+    }
+
+    fn raw_recovered(&mut self, now: Micros, observer: &mut dyn SessionObserver) {
+        let Some(recovery) = self.raw_recovery.take() else {
+            return;
+        };
+        observer.observe(&SessionEvent::RawRecovered {
+            nodes: &self.nodes,
+            failure: recovery.failure,
+            attempts: recovery.attempts,
+            elapsed: now.saturating_sub(recovery.started),
+        });
+    }
+
     pub fn on_raw_readable(&mut self, now: Micros, observer: &mut dyn SessionObserver) {
         for _ in 0..MAX_REPORTS_PER_WAKE {
-            let Some(devices) = self.devices.as_mut() else {
+            let Some(raw) = self
+                .devices
+                .as_mut()
+                .and_then(|devices| devices.raw.as_mut())
+            else {
                 return;
             };
-            match devices.raw.read_report(&mut self.report) {
+            match raw.read_report(&mut self.report) {
                 Ok(None) => return,
                 Ok(Some(len)) => {
                     let before = self.engine.stats();
@@ -481,13 +634,12 @@ impl<O: DeviceOpener> Session<O> {
                     if let Some(started) = started {
                         record_processing_time(&mut self.outputs, started.elapsed());
                     }
-                    let after = self.engine.stats();
-                    let failure = if after.malformed > before.malformed {
+                    let malformed = self.engine.stats().malformed > before.malformed;
+                    self.self_check.on_raw_report(now);
+                    let failure = if malformed {
                         self.self_check.on_malformed_report(now)
                     } else {
-                        if after.ignored == before.ignored {
-                            self.self_check.on_valid_report();
-                        }
+                        self.raw_recovered(now, observer);
                         None
                     };
                     observer.observe(&SessionEvent::Report {
@@ -498,12 +650,16 @@ impl<O: DeviceOpener> Session<O> {
                         return;
                     }
                     if let Some(failure) = failure {
-                        self.degrade(now, DegradeCause::SelfCheck(failure), observer);
+                        self.lose_raw(now, RawFailure::SelfCheck(failure), observer);
                         return;
                     }
                 }
+                Err(error) if error.is_gone() => {
+                    self.release(ReleaseReason::DeviceGone, observer);
+                    return;
+                }
                 Err(error) => {
-                    self.read_failed(now, &error, observer);
+                    self.lose_raw(now, RawFailure::ReadFailed(error.kind()), observer);
                     return;
                 }
             }
@@ -523,25 +679,26 @@ impl<O: DeviceOpener> Session<O> {
                 events: &self.stock_events,
             });
         }
-        if let Err(error) = result {
-            self.read_failed(now, &error, observer);
-            return;
+        match result {
+            Err(error) if error.is_gone() => {
+                self.release(ReleaseReason::DeviceGone, observer);
+                return;
+            }
+            Err(_) => {
+                self.degrade(now, DegradeCause::ReadFailed, observer);
+                return;
+            }
+            Ok(()) => {}
         }
-        if active && let Some(failure) = self.self_check.on_stock_activity(now) {
-            self.degrade(now, DegradeCause::SelfCheck(failure), observer);
-        }
-    }
-
-    fn read_failed(
-        &mut self,
-        now: Micros,
-        error: &DeviceError,
-        observer: &mut dyn SessionObserver,
-    ) {
-        if error.is_gone() {
-            self.release(ReleaseReason::DeviceGone, observer);
-        } else {
-            self.degrade(now, DegradeCause::ReadFailed, observer);
+        let raw_open = self
+            .devices
+            .as_ref()
+            .is_some_and(|devices| devices.raw.is_some());
+        if active
+            && raw_open
+            && let Some(failure) = self.self_check.on_stock_activity(now)
+        {
+            self.lose_raw(now, RawFailure::SelfCheck(failure), observer);
         }
     }
 
@@ -563,12 +720,14 @@ impl<O: DeviceOpener> Session<O> {
     pub fn release(&mut self, reason: ReleaseReason, observer: &mut dyn SessionObserver) {
         self.acquisition = None;
         self.degradation = None;
+        self.raw_recovery = None;
         self.release_devices(reason, observer);
         self.state = SessionState::Absent;
     }
 
     fn degrade(&mut self, now: Micros, cause: DegradeCause, observer: &mut dyn SessionObserver) {
         self.acquisition = None;
+        self.raw_recovery = None;
         if let Some(reason) = cause.release_reason() {
             self.release_devices(reason, observer);
         }
@@ -670,7 +829,7 @@ fn acquire<O: DeviceOpener>(
         .open_stock(&nodes.evdev)
         .map_err(|error| (AcquireStep::OpenStock, error))?;
     let mut devices = Devices {
-        raw,
+        raw: Some(raw),
         pointer,
         touchpad,
         stock,

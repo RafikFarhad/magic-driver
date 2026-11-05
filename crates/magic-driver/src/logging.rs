@@ -1,9 +1,14 @@
 use std::env;
-use std::io;
+use std::io::{self, IsTerminal};
+use std::os::fd::AsRawFd;
 
 use md_core::config::LogLevel;
+use tracing::Subscriber;
+use tracing_journald::{Priority, PriorityMappings};
 use tracing_subscriber::filter::LevelFilter;
-use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::layer::{Layer, SubscriberExt};
+use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::reload;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{Registry, fmt};
@@ -16,11 +21,54 @@ pub enum LogTarget {
     Stderr,
 }
 
-pub fn target_for(journal_stream: Option<&str>) -> LogTarget {
-    match journal_stream {
-        Some(value) if !value.is_empty() => LogTarget::Journal,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamId {
+    pub device: u64,
+    pub inode: u64,
+}
+
+pub fn parse_journal_stream(value: &str) -> Option<StreamId> {
+    let (device, inode) = value.split_once(':')?;
+    Some(StreamId {
+        device: device.parse().ok()?,
+        inode: inode.parse().ok()?,
+    })
+}
+
+pub fn target_for(journal_stream: Option<&str>, stderr: Option<StreamId>) -> LogTarget {
+    match (journal_stream.and_then(parse_journal_stream), stderr) {
+        (Some(journal), Some(stderr)) if journal == stderr => LogTarget::Journal,
         _ => LogTarget::Stderr,
     }
+}
+
+fn stderr_stream_id() -> Option<StreamId> {
+    let stat = nix::sys::stat::fstat(io::stderr().as_raw_fd()).ok()?;
+    Some(StreamId {
+        device: stat.st_dev,
+        inode: stat.st_ino,
+    })
+}
+
+pub fn journal_priorities() -> PriorityMappings {
+    PriorityMappings {
+        error: Priority::Error,
+        warn: Priority::Warning,
+        info: Priority::Notice,
+        debug: Priority::Informational,
+        trace: Priority::Debug,
+    }
+}
+
+fn stderr_layer<S, W>(writer: W, ansi: bool) -> impl Layer<S>
+where
+    S: Subscriber + for<'span> LookupSpan<'span>,
+    W: for<'writer> MakeWriter<'writer> + 'static,
+{
+    fmt::layer()
+        .with_writer(writer)
+        .with_target(false)
+        .with_ansi(ansi)
 }
 
 pub fn level_filter(level: LogLevel, debug: bool) -> LevelFilter {
@@ -52,11 +100,16 @@ impl std::fmt::Debug for Logging {
 impl Logging {
     pub fn init(level: LogLevel, debug: bool) -> Logging {
         let (filter, handle) = reload::Layer::new(level_filter(level, debug));
-        let mut target = target_for(env::var(JOURNAL_STREAM_VARIABLE).ok().as_deref());
+        let mut target = target_for(
+            env::var(JOURNAL_STREAM_VARIABLE).ok().as_deref(),
+            stderr_stream_id(),
+        );
         let journald = if target == LogTarget::Journal {
-            tracing_journald::layer()
-                .ok()
-                .map(|layer| layer.with_syslog_identifier("magic-driver".to_owned()))
+            tracing_journald::layer().ok().map(|layer| {
+                layer
+                    .with_syslog_identifier("magic-driver".to_owned())
+                    .with_priority_mappings(journal_priorities())
+            })
         } else {
             None
         };
@@ -64,7 +117,7 @@ impl Logging {
             target = LogTarget::Stderr;
         }
         let stderr = (target == LogTarget::Stderr)
-            .then(|| fmt::layer().with_writer(io::stderr).with_target(false));
+            .then(|| stderr_layer(io::stderr, io::stderr().is_terminal()));
         let _ = tracing_subscriber::registry()
             .with(filter)
             .with(journald)
@@ -144,11 +197,110 @@ mod tests {
     use super::capture::capture_at;
     use super::*;
 
+    const STREAM: StreamId = StreamId {
+        device: 8,
+        inode: 12_345,
+    };
+
     #[test]
-    fn the_journal_is_used_when_systemd_connected_stderr_to_it() {
-        assert_eq!(target_for(Some("8:12345")), LogTarget::Journal);
-        assert_eq!(target_for(Some("")), LogTarget::Stderr);
-        assert_eq!(target_for(None), LogTarget::Stderr);
+    fn journal_stream_values_parse_as_device_and_inode() {
+        assert_eq!(parse_journal_stream("8:12345"), Some(STREAM));
+        assert_eq!(
+            parse_journal_stream("18446744073709551615:1"),
+            Some(StreamId {
+                device: u64::MAX,
+                inode: 1
+            })
+        );
+        for invalid in [
+            "",
+            "8",
+            "8:",
+            ":12345",
+            "8:12345:1",
+            "a:b",
+            "-8:12345",
+            " 8:12345",
+        ] {
+            assert_eq!(parse_journal_stream(invalid), None, "{invalid:?}");
+        }
+    }
+
+    #[test]
+    fn the_journal_is_used_only_when_stderr_is_the_journal_stream() {
+        assert_eq!(
+            target_for(Some("8:12345"), Some(STREAM)),
+            LogTarget::Journal
+        );
+        let terminal = StreamId {
+            device: 24,
+            inode: 7,
+        };
+        assert_eq!(
+            target_for(Some("8:12345"), Some(terminal)),
+            LogTarget::Stderr
+        );
+        assert_eq!(target_for(Some("8:12345"), None), LogTarget::Stderr);
+        assert_eq!(target_for(Some("garbage"), Some(STREAM)), LogTarget::Stderr);
+        assert_eq!(target_for(Some(""), Some(STREAM)), LogTarget::Stderr);
+        assert_eq!(target_for(None, Some(STREAM)), LogTarget::Stderr);
+    }
+
+    #[test]
+    fn only_warnings_and_errors_pass_journalctl_priority_warning() {
+        let priorities = journal_priorities();
+        let warning = Priority::Warning as u8;
+        assert_eq!(priorities.error as u8, b'3');
+        assert_eq!(priorities.warn as u8, b'4');
+        assert!(priorities.info as u8 > warning);
+        assert!(priorities.debug as u8 > warning);
+        assert!(priorities.trace as u8 > warning);
+    }
+
+    #[derive(Clone, Default)]
+    struct Buffer(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl io::Write for Buffer {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().expect("buffer lock").extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'writer> MakeWriter<'writer> for Buffer {
+        type Writer = Buffer;
+
+        fn make_writer(&'writer self) -> Buffer {
+            self.clone()
+        }
+    }
+
+    #[test]
+    fn stderr_output_is_plain_text_with_the_level_when_not_a_terminal() {
+        let buffer = Buffer::default();
+        let subscriber = tracing_subscriber::registry()
+            .with(LevelFilter::INFO)
+            .with(stderr_layer(buffer.clone(), false));
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::error!("lost the raw stream");
+            tracing::warn!("recovered");
+            tracing::info!("active");
+        });
+        let text = String::from_utf8(buffer.0.lock().expect("buffer lock").clone()).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 3, "{text}");
+        assert!(!text.contains('\u{1b}'), "{text:?}");
+        assert!(
+            lines[0].ends_with("ERROR lost the raw stream"),
+            "{}",
+            lines[0]
+        );
+        assert!(lines[1].ends_with(" WARN recovered"), "{}", lines[1]);
+        assert!(lines[2].ends_with(" INFO active"), "{}", lines[2]);
     }
 
     #[test]

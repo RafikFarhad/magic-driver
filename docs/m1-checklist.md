@@ -99,7 +99,8 @@ This cannot be provoked safely on a working mouse. Check only that it stayed qui
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
-| 9.1 | After a day of use: `journalctl --user -u magic-driver -b \| grep -E 'degraded\|self-check'` | no lines; if there are any, copy them here (they name the cause and the retry time) | |
+| 9.1 | After a day of use: `journalctl --user -u magic-driver -b -p warning` | no lines; if there are any, copy them here (`lost the raw stream ...` names the cause, `recovered ...` says how long it took) | |
+| 9.2 | Same day: `journalctl --user -u magic-driver -b \| grep -E 'released\|taken over'` | only the takeovers and releases of real disconnects, stops and restarts; a self-check failure never releases the stock device or recreates the virtual devices | |
 
 ## 10. Uninstall leaves nothing (FR-52)
 

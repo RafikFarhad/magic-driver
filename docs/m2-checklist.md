@@ -128,7 +128,7 @@ Do each line, check it, then undo it and reload before the next line.
 | 9.3 | Write the ten values of N | each under 2 000 ms after the mouse reconnected | |
 | 9.4 | After the last cycle: `magic-driver status` | `active`, exactly one `magic-driver pointer` and one `magic-driver touchpad` | |
 | 9.5 | After the last cycle: a two-finger swipe and a two-finger double tap | both still work | |
-| 9.6 | `journalctl --user -u magic-driver -b \| grep -E 'degraded\|giving up'` | no lines, or copy them here | |
+| 9.6 | `journalctl --user -u magic-driver -b -p warning` | no lines, or copy them here | |
 
 ## 10. Other adapters (FR-6)
 

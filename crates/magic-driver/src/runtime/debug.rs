@@ -5,7 +5,8 @@ use md_core::report;
 use md_core::{Button, Micros, Output};
 
 use crate::io::EvdevEvent;
-use crate::session::{SessionEvent, SessionObserver};
+use crate::session::selfcheck::SelfCheckFailure;
+use crate::session::{RawFailure, SessionEvent, SessionObserver};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ButtonCounts {
@@ -167,6 +168,74 @@ pub fn render_stock_events(t: Micros, events: &[EvdevEvent]) -> String {
     line
 }
 
+fn log_raw_stream(event: &SessionEvent<'_>) {
+    match event {
+        SessionEvent::RawLost {
+            nodes,
+            failure,
+            retry_in,
+            attempts,
+            elapsed,
+        } => {
+            let consequence = raw_loss_consequence(*failure);
+            if *attempts == 0 {
+                tracing::error!(
+                    "lost the raw stream of {}: {failure}; keeping the grab and the virtual devices, reopening the raw device in {} ms; {consequence}",
+                    nodes.hidraw.display(),
+                    retry_in.as_millis()
+                );
+            } else {
+                tracing::error!(
+                    "raw stream of {} still not usable after {attempts} reopen attempt{} over {} ms: {failure}; retrying in {} ms; {consequence}",
+                    nodes.hidraw.display(),
+                    plural(*attempts),
+                    elapsed.as_millis(),
+                    retry_in.as_millis()
+                );
+            }
+        }
+        SessionEvent::RawReopenFailed {
+            nodes,
+            error,
+            retry_in,
+            attempts,
+            elapsed,
+        } => tracing::warn!(
+            "cannot reopen {}: {error}; attempt {attempts}, {} ms after the raw stream was lost, retrying in {} ms",
+            nodes.hidraw.display(),
+            elapsed.as_millis(),
+            retry_in.as_millis()
+        ),
+        SessionEvent::RawRecovered {
+            nodes,
+            failure,
+            attempts,
+            elapsed,
+        } => tracing::warn!(
+            "recovered {}: raw reports flow again {} ms after: {failure}; {attempts} reopen attempt{}, the grab and the virtual devices were kept",
+            nodes.hidraw.display(),
+            elapsed.as_millis(),
+            plural(*attempts)
+        ),
+        _ => {}
+    }
+}
+
+fn plural(count: u32) -> &'static str {
+    if count == 1 { "" } else { "s" }
+}
+
+fn raw_loss_consequence(failure: RawFailure) -> &'static str {
+    match failure {
+        RawFailure::SelfCheck(SelfCheckFailure::ParseErrors { .. }) => {
+            "the reports cannot be parsed, so the mouse will not respond until magic-driver is stopped or the report format is fixed; stop it with `systemctl --user stop magic-driver` or Ctrl+C to get the stock behaviour back"
+        }
+        RawFailure::SelfCheck(SelfCheckFailure::NoRawReports) | RawFailure::ReadFailed(_) => {
+            "the mouse does not respond until raw reports flow again; stop magic-driver with `systemctl --user stop magic-driver` or Ctrl+C to get the stock behaviour back"
+        }
+    }
+}
+
 pub struct LogObserver {
     debug: bool,
     cross_check: CrossCheck,
@@ -241,6 +310,9 @@ impl SessionObserver for LogObserver {
                 "retrying takeover of {} after: {cause}",
                 nodes.hidraw.display()
             ),
+            SessionEvent::RawLost { .. }
+            | SessionEvent::RawReopenFailed { .. }
+            | SessionEvent::RawRecovered { .. } => log_raw_stream(event),
             SessionEvent::Report { bytes, outputs, .. } => {
                 if !self.debug {
                     return;
@@ -490,7 +562,7 @@ mod tests {
                 },
                 SessionEvent::Degraded {
                     nodes: &nodes,
-                    cause: DegradeCause::SelfCheck(SelfCheckFailure::NoRawReports),
+                    cause: DegradeCause::VirtualDeviceFailed,
                     retry_in: Micros::from_millis(5_000),
                 },
                 SessionEvent::Retrying {
@@ -505,12 +577,73 @@ mod tests {
         assert_eq!(
             at(&records, Level::ERROR),
             [
-                "degraded /dev/hidraw5: no valid hidraw report for 250 ms while the stock device is active; the mouse keeps its stock behaviour, retrying in 5 s"
+                "degraded /dev/hidraw5: virtual device write failed; the mouse keeps its stock behaviour, retrying in 5 s"
             ]
         );
         assert_eq!(
             at(&records, Level::INFO),
             ["retrying takeover of /dev/hidraw5 after: device read failed"]
+        );
+    }
+
+    #[test]
+    fn raw_stream_problems_are_errors_or_warnings_and_recovery_says_how_long() {
+        let nodes = nodes();
+        let error = DeviceError::from(Errno::EACCES);
+        let silent = RawFailure::SelfCheck(SelfCheckFailure::NoRawReports);
+        let parse = RawFailure::SelfCheck(SelfCheckFailure::ParseErrors { count: 10 });
+        let records = render(
+            false,
+            &[
+                SessionEvent::RawLost {
+                    nodes: &nodes,
+                    failure: silent,
+                    retry_in: Micros::from_millis(50),
+                    attempts: 0,
+                    elapsed: Micros::ZERO,
+                },
+                SessionEvent::RawReopenFailed {
+                    nodes: &nodes,
+                    error: &error,
+                    retry_in: Micros::from_millis(100),
+                    attempts: 1,
+                    elapsed: Micros::from_millis(50),
+                },
+                SessionEvent::RawLost {
+                    nodes: &nodes,
+                    failure: parse,
+                    retry_in: Micros::from_millis(5_000),
+                    attempts: 3,
+                    elapsed: Micros::from_millis(6_000),
+                },
+                SessionEvent::RawRecovered {
+                    nodes: &nodes,
+                    failure: silent,
+                    attempts: 1,
+                    elapsed: Micros::from_millis(90),
+                },
+            ],
+        );
+        assert_eq!(records.len(), 4, "{records:?}");
+        let errors = at(&records, Level::ERROR);
+        assert_eq!(errors.len(), 2);
+        assert!(errors[0].starts_with(
+            "lost the raw stream of /dev/hidraw5: self-check failed: no hidraw report for 250 ms while the stock device kept reporting; keeping the grab and the virtual devices, reopening the raw device in 50 ms"
+        ));
+        assert!(errors[0].contains("`systemctl --user stop magic-driver` or Ctrl+C"));
+        assert!(errors[1].starts_with(
+            "raw stream of /dev/hidraw5 still not usable after 3 reopen attempts over 6000 ms: self-check failed: 10 malformed hidraw reports"
+        ));
+        assert!(errors[1].contains(
+            "the reports cannot be parsed, so the mouse will not respond until magic-driver is stopped or the report format is fixed"
+        ));
+        assert!(errors[1].ends_with("to get the stock behaviour back"));
+        assert_eq!(
+            at(&records, Level::WARN),
+            [
+                "cannot reopen /dev/hidraw5: permission denied (Permission denied (os error 13)); attempt 1, 50 ms after the raw stream was lost, retrying in 100 ms",
+                "recovered /dev/hidraw5: raw reports flow again 90 ms after: self-check failed: no hidraw report for 250 ms while the stock device kept reporting; 1 reopen attempt, the grab and the virtual devices were kept",
+            ]
         );
     }
 }

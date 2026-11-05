@@ -77,8 +77,13 @@ This also builds `-p magic-driver-inspector` and installs `/usr/local/bin/magic-
 | Check a config change before applying it | `magic-driver config test` |
 | Apply a config change | `systemctl --user reload magic-driver` |
 | Read the log | `journalctl --user -u magic-driver -b` |
+| Show only problems | `journalctl --user -u magic-driver -b -p warning` |
 
-`reload` first runs `magic-driver config test`. If the file is invalid the reload fails with the error and line number, and the running config stays as it was. The daemon validates again on `SIGHUP`, so a direct `kill -HUP` is just as safe. `log.level` in the config (`warn`, `info`, `debug`) sets how much goes to the journal; `info` logs only lifecycle events (taken over, released, degraded, config reloaded).
+`reload` first runs `magic-driver config test`. If the file is invalid the reload fails with the error and line number, and the running config stays as it was. The daemon validates again on `SIGHUP`, so a direct `kill -HUP` is just as safe. `log.level` in the config (`warn`, `info`, `debug`) sets how much goes to the journal; `info` logs only lifecycle events (taken over, released, degraded, config reloaded). Problems are logged as warnings or errors, so `-p warning` shows only them; normal lifecycle events are logged below that priority.
+
+While magic-driver runs it checks the raw stream of the mouse. If the stock device keeps reporting for 250 ms while no raw report arrives, if the raw device returns a read error, or if 10 raw reports within one second cannot be parsed, the journal shows an error starting with `lost the raw stream of /dev/hidrawN`. magic-driver keeps the stock device grabbed and keeps its virtual devices, so the mouse does not respond until the raw stream works again, and it reopens only the raw device, first after 50 ms and then with a growing delay of up to 5 s. While this lasts, `magic-driver status` shows `recovering: ...`, and a repeated failure is logged at most once every 5 s. When raw reports flow again the journal shows a warning `recovered /dev/hidrawN: raw reports flow again N ms after: ...`. If the reports cannot be parsed at all (for example after a kernel update changed the report format) the mouse stays unresponsive until you stop magic-driver with `systemctl --user stop magic-driver` (or Ctrl+C when it runs in a terminal), which gives the stock behaviour back at once. Only a disconnect of the mouse, a stop, a crash or an exit release the stock device.
+
+When `magic-driver run` is started from a terminal it logs readable text to the terminal; it logs to the journal only when systemd connected its standard error to the journal.
 
 The service restarts on its own one second after any crash, and systemd kills it if its main loop stops answering for 2 seconds (watchdog). In both cases the stock driver takes over immediately, because the kernel releases the grab when the process ends.
 

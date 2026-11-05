@@ -48,6 +48,40 @@ pub fn session_record(t: md_core::Micros, event: &SessionEvent<'_>) -> Option<Tr
             "acquiring",
             format!("{}: retrying after {cause}", nodes.hidraw.display()),
         ),
+        SessionEvent::RawLost {
+            nodes,
+            failure,
+            retry_in,
+            ..
+        } => (
+            "recovering",
+            format!(
+                "{}: {failure}, reopening the raw device in {} ms",
+                nodes.hidraw.display(),
+                retry_in.as_millis()
+            ),
+        ),
+        SessionEvent::RawReopenFailed {
+            nodes,
+            error,
+            retry_in,
+            ..
+        } => (
+            "recovering",
+            format!(
+                "{}: cannot reopen the raw device: {error}, retrying in {} ms",
+                nodes.hidraw.display(),
+                retry_in.as_millis()
+            ),
+        ),
+        SessionEvent::RawRecovered { nodes, elapsed, .. } => (
+            "active",
+            format!(
+                "{}: raw reports flow again after {} ms",
+                nodes.hidraw.display(),
+                elapsed.as_millis()
+            ),
+        ),
         SessionEvent::Report { .. }
         | SessionEvent::StockEvents { .. }
         | SessionEvent::Trace { .. } => return None,
