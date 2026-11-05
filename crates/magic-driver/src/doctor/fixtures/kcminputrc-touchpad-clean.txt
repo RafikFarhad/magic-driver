@@ -2,4 +2,5 @@
 DisableEventsOnExternalMouse=false
 NaturalScroll=true
 ScrollFactor=1.5
+ScrollMethod=1
 TapToClick=false

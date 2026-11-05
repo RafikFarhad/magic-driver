@@ -9,6 +9,9 @@ pub const RULE_PATH: &str = "/etc/udev/rules.d/70-magic-driver.rules";
 pub const MODULES_LOAD_PATH: &str = "/etc/modules-load.d/magic-driver.conf";
 pub const HIRES_WARNING: &str = "high-resolution scroll";
 pub const MAGIC_MOUSE_KEYD_ID: &str = "004c:0269";
+pub const MODULES_DIR: &str = "/lib/modules";
+pub const MAGIC_MOUSE_DRIVER: &str = "magicmouse";
+pub const MAGIC_MOUSE_MODULE_FILE: &str = "hid-magicmouse.ko";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Verdict {
@@ -396,7 +399,162 @@ pub fn touchpad_settings(kcminputrc: Option<&str>) -> Vec<Check> {
     } else {
         Check::pass(dwm_name, format!("off for {}", TOUCHPAD_IDENTITY.name))
     };
-    vec![tap, dwm]
+    vec![tap, dwm, scroll_method(&touchpad)]
+}
+
+fn scroll_method_name(value: &str) -> &'static str {
+    match value {
+        "0" => "no scrolling",
+        "2" => "edge scrolling",
+        "4" => "on-button-down scrolling",
+        _ => "an unknown scroll method",
+    }
+}
+
+fn scroll_method(touchpad: &[&BTreeMap<String, String>]) -> Check {
+    let name = "touchpad scroll method";
+    let other = touchpad
+        .iter()
+        .filter_map(|keys| keys.get("ScrollMethod"))
+        .find(|value| value.as_str() != "1");
+    match other {
+        Some(value) => Check::warn(
+            name,
+            format!(
+                "{} is set to {} (ScrollMethod={value}) instead of two fingers, so magic-driver scrolling does not work",
+                TOUCHPAD_IDENTITY.name,
+                scroll_method_name(value)
+            ),
+            format!(
+                "choose Two fingers in System Settings, Touchpad, device {}, Scrolling",
+                TOUCHPAD_IDENTITY.name
+            ),
+        ),
+        None => Check::pass(
+            name,
+            format!("two-finger scrolling for {}", TOUCHPAD_IDENTITY.name),
+        ),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MagicMouseModule {
+    File(PathBuf),
+    BuiltIn,
+    NotFound,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KernelModules {
+    UnknownRelease(String),
+    Missing {
+        release: String,
+    },
+    Installed {
+        release: String,
+        magicmouse: MagicMouseModule,
+    },
+}
+
+pub fn kernel_modules(modules: &KernelModules) -> Check {
+    let name = "kernel modules";
+    match modules {
+        KernelModules::UnknownRelease(reason) => Check::warn(
+            name,
+            format!("cannot read the running kernel release: {reason}"),
+            format!("compare the output of uname -r with the directories in {MODULES_DIR}"),
+        ),
+        KernelModules::Missing { release } => Check::fail(
+            name,
+            format!(
+                "{MODULES_DIR}/{release} does not exist, so the running kernel {release} cannot load hid_magicmouse or any other module"
+            ),
+            "the kernel was upgraded or removed without a reboot; reboot into the installed kernel",
+        ),
+        KernelModules::Installed {
+            release,
+            magicmouse: MagicMouseModule::File(path),
+        } => Check::pass(
+            name,
+            format!(
+                "{MODULES_DIR}/{release} exists and has hid_magicmouse ({})",
+                path.display()
+            ),
+        ),
+        KernelModules::Installed {
+            release,
+            magicmouse: MagicMouseModule::BuiltIn,
+        } => Check::pass(
+            name,
+            format!("{MODULES_DIR}/{release} exists and hid_magicmouse is built into the kernel"),
+        ),
+        KernelModules::Installed {
+            release,
+            magicmouse: MagicMouseModule::NotFound,
+        } => Check::warn(
+            name,
+            format!(
+                "{MODULES_DIR}/{release} has no {MAGIC_MOUSE_MODULE_FILE}* and modules.builtin does not list it, so the Magic Mouse 2 stays on hid-generic"
+            ),
+            "use a kernel built with CONFIG_HID_MAGICMOUSE (most distribution kernels are)",
+        ),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HidBinding {
+    pub device: String,
+    pub driver: Option<String>,
+}
+
+pub fn hid_driver(bindings: Result<&[HidBinding], &str>, modules: &KernelModules) -> Vec<Check> {
+    let name = "HID driver";
+    let bindings = match bindings {
+        Ok(bindings) => bindings,
+        Err(reason) => {
+            return vec![Check::warn(
+                name,
+                format!("cannot list the HID devices: {reason}"),
+                "run: ls -l /sys/bus/hid/devices/*/driver",
+            )];
+        }
+    };
+    if bindings.is_empty() {
+        return vec![Check::pass(
+            name,
+            "no Magic Mouse 2 is connected, nothing to check",
+        )];
+    }
+    let hint = if matches!(modules, KernelModules::Missing { .. }) {
+        "the running kernel has no modules directory, see the kernel modules check: reboot into the installed kernel"
+    } else {
+        "turn the mouse off and on to reconnect it, or load the driver with: sudo modprobe hid_magicmouse"
+    };
+    bindings
+        .iter()
+        .map(|binding| match binding.driver.as_deref() {
+            Some(MAGIC_MOUSE_DRIVER) => Check::pass(
+                name,
+                format!("{} is bound to {MAGIC_MOUSE_DRIVER}", binding.device),
+            ),
+            Some(driver) => Check::fail(
+                name,
+                format!(
+                    "{} is bound to {driver}, not {MAGIC_MOUSE_DRIVER}, so the mouse never reports touches and scrolling cannot work",
+                    binding.device
+                ),
+                hint,
+            ),
+            None => Check::fail(
+                name,
+                format!(
+                    "{} is not bound to any driver, so the mouse never reports touches and scrolling cannot work",
+                    binding.device
+                ),
+                hint,
+            ),
+        })
+        .collect()
 }
 
 fn hires_device(line: &str) -> Option<&str> {

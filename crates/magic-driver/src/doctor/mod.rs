@@ -9,14 +9,23 @@ use std::process::Command;
 
 use nix::unistd::{Uid, User};
 
-use self::checks::{Check, MODULES_LOAD_PATH, NodeAcl, RULE_PATH, ServiceState, Verdict};
+use md_core::profile::Profile;
+
+use self::checks::{
+    Check, HidBinding, KernelModules, MAGIC_MOUSE_MODULE_FILE, MODULES_DIR, MODULES_LOAD_PATH,
+    MagicMouseModule, NodeAcl, RULE_PATH, ServiceState, Verdict,
+};
 use crate::config_file::{self, ConfigLocation, LoadOutcome, default_config_path};
+use crate::discovery::parse_hid_id;
 use crate::discovery::udev_directory::enumerate_mice;
 use crate::status::UINPUT_PATH;
 
 pub const SHIPPED_RULE: &str = include_str!("../../../../dist/70-magic-driver.rules");
 pub const SERVICE_NAME: &str = "magic-driver.service";
 const KEYD_DIR: &str = "/etc/keyd";
+const OSRELEASE_PATH: &str = "proc/sys/kernel/osrelease";
+const HID_DEVICES_PATH: &str = "sys/bus/hid/devices";
+const SKIPPED_MODULE_TREES: [&str; 2] = ["build", "source"];
 
 pub fn render(checks: &[Check]) -> String {
     let mut text = String::new();
@@ -136,6 +145,95 @@ fn keyd_configs() -> Vec<(PathBuf, String)> {
     configs
 }
 
+fn find_module_file(dir: &Path, relative: &Path) -> Option<PathBuf> {
+    let mut entries: Vec<_> = fs::read_dir(dir).ok()?.flatten().collect();
+    entries.sort_by_key(fs::DirEntry::file_name);
+    for entry in entries {
+        let file_name = entry.file_name();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
+            if relative.as_os_str().is_empty()
+                && SKIPPED_MODULE_TREES
+                    .iter()
+                    .any(|skipped| file_name == *skipped)
+            {
+                continue;
+            }
+            if let Some(found) = find_module_file(&entry.path(), &relative.join(&file_name)) {
+                return Some(found);
+            }
+        } else if file_name
+            .to_string_lossy()
+            .starts_with(MAGIC_MOUSE_MODULE_FILE)
+        {
+            return Some(relative.join(file_name));
+        }
+    }
+    None
+}
+
+fn kernel_modules_state(root: &Path) -> KernelModules {
+    let release = match fs::read_to_string(root.join(OSRELEASE_PATH)) {
+        Ok(text) if !text.trim().is_empty() => text.trim().to_owned(),
+        Ok(_) => return KernelModules::UnknownRelease(format!("/{OSRELEASE_PATH} is empty")),
+        Err(error) => {
+            return KernelModules::UnknownRelease(format!("/{OSRELEASE_PATH}: {error}"));
+        }
+    };
+    let dir = root
+        .join(MODULES_DIR.trim_start_matches('/'))
+        .join(&release);
+    if !dir.is_dir() {
+        return KernelModules::Missing { release };
+    }
+    let built_in = fs::read_to_string(dir.join("modules.builtin")).is_ok_and(|text| {
+        text.lines().any(|line| {
+            Path::new(line.trim())
+                .file_name()
+                .is_some_and(|name| name == MAGIC_MOUSE_MODULE_FILE)
+        })
+    });
+    let magicmouse = if built_in {
+        MagicMouseModule::BuiltIn
+    } else {
+        find_module_file(&dir, Path::new(""))
+            .map_or(MagicMouseModule::NotFound, MagicMouseModule::File)
+    };
+    KernelModules::Installed {
+        release,
+        magicmouse,
+    }
+}
+
+fn is_known_mouse(device: &str) -> bool {
+    device
+        .split_once('.')
+        .and_then(|(id, _)| parse_hid_id(id))
+        .and_then(|(bus, vendor, product)| Profile::lookup(bus, vendor, product))
+        .is_some()
+}
+
+fn hid_bindings(root: &Path) -> Result<Vec<HidBinding>, String> {
+    let dir = root.join(HID_DEVICES_PATH);
+    let entries = fs::read_dir(&dir).map_err(|error| format!("/{HID_DEVICES_PATH}: {error}"))?;
+    let mut bindings: Vec<_> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let device = entry.file_name().into_string().ok()?;
+            is_known_mouse(&device).then(|| HidBinding {
+                driver: fs::read_link(entry.path().join("driver"))
+                    .ok()
+                    .and_then(|target| Some(target.file_name()?.to_string_lossy().into_owned())),
+                device,
+            })
+        })
+        .collect();
+    bindings.sort_by(|left, right| left.device.cmp(&right.device));
+    Ok(bindings)
+}
+
 pub fn collect() -> Vec<Check> {
     let mut found = Vec::new();
     found.push(checks::udev_rule(
@@ -188,6 +286,13 @@ pub fn collect() -> Vec<Check> {
         uinput.exists(),
         Path::new("/sys/module/uinput").exists(),
         fs::read_to_string(MODULES_LOAD_PATH).ok().as_deref(),
+    ));
+    let root = Path::new("/");
+    let modules = kernel_modules_state(root);
+    found.push(checks::kernel_modules(&modules));
+    found.extend(checks::hid_driver(
+        hid_bindings(root).as_deref().map_err(String::as_str),
+        &modules,
     ));
     let config_path = config_location();
     let outcome = load_config(config_path.as_deref());

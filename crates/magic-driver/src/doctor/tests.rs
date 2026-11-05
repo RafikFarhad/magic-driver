@@ -3,7 +3,10 @@ use std::path::{Path, PathBuf};
 
 use md_core::config::{Config, Diagnostic, DiagnosticKind, ParsedConfig};
 
-use super::checks::{self, Check, NodeAcl, Permissions, ServiceState, Verdict};
+use super::checks::{
+    self, Check, HidBinding, KernelModules, MagicMouseModule, NodeAcl, Permissions, ServiceState,
+    Verdict,
+};
 use super::*;
 use crate::config_file::LoadOutcome;
 
@@ -12,6 +15,12 @@ fn fixture(name: &str) -> String {
         .join("src/doctor/fixtures")
         .join(name);
     fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+fn fixture_root(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/doctor/fixtures")
+        .join(name)
 }
 
 fn listed(name: &str) -> NodeAcl {
@@ -226,18 +235,216 @@ fn touchpad_settings_are_read_from_kcminputrc() {
     };
     assert_eq!(
         verdicts(Some(&fixture("kcminputrc-owner.txt"))),
-        [Verdict::Pass, Verdict::Pass]
+        [Verdict::Pass, Verdict::Pass, Verdict::Pass]
     );
     assert_eq!(
         verdicts(Some(&fixture("kcminputrc-touchpad-clean.txt"))),
-        [Verdict::Pass, Verdict::Pass]
+        [Verdict::Pass, Verdict::Pass, Verdict::Pass]
     );
     let on = checks::touchpad_settings(Some(&fixture("kcminputrc-touchpad-tap-on.txt")));
     assert_eq!(on[0].verdict, Verdict::Warn);
     assert_eq!(on[0].detail, "tap-to-click is on for magic-driver touchpad");
     assert_eq!(on[1].verdict, Verdict::Warn);
     assert!(on[1].detail.contains("scrolling stops"));
-    assert_eq!(verdicts(None), [Verdict::Pass, Verdict::Pass]);
+    assert_eq!(on[2].verdict, Verdict::Pass);
+    assert_eq!(
+        verdicts(None),
+        [Verdict::Pass, Verdict::Pass, Verdict::Pass]
+    );
+}
+
+#[test]
+fn the_touchpad_scroll_method_must_be_two_fingers() {
+    let scroll = |text: &str| checks::touchpad_settings(Some(text)).remove(2);
+    let clean = scroll(&fixture("kcminputrc-touchpad-clean.txt"));
+    assert_eq!(clean.name, "touchpad scroll method");
+    assert_eq!(clean.verdict, Verdict::Pass);
+    assert_eq!(
+        clean.detail,
+        "two-finger scrolling for magic-driver touchpad"
+    );
+    let unset = scroll(&fixture("kcminputrc-touchpad-tap-on.txt"));
+    assert_eq!(unset.verdict, Verdict::Pass);
+    let edge = scroll(&fixture("kcminputrc-touchpad-edge-scroll.txt"));
+    assert_eq!(edge.verdict, Verdict::Warn);
+    assert_eq!(
+        edge.detail,
+        "magic-driver touchpad is set to edge scrolling (ScrollMethod=2) instead of two fingers, so magic-driver scrolling does not work"
+    );
+    assert_eq!(
+        edge.hint.as_deref(),
+        Some(
+            "choose Two fingers in System Settings, Touchpad, device magic-driver touchpad, Scrolling"
+        )
+    );
+    let none = scroll("[Libinput][19780][2][magic-driver touchpad]\nScrollMethod=0\n");
+    assert_eq!(none.verdict, Verdict::Warn);
+    assert!(none.detail.contains("no scrolling (ScrollMethod=0)"));
+    let button = scroll("[Libinput][19780][2][magic-driver touchpad]\nScrollMethod=4\n");
+    assert_eq!(button.verdict, Verdict::Warn);
+    assert!(button.detail.contains("on-button-down scrolling"));
+    let other_device = scroll("[Libinput][76][617][Owner’s Magic Mouse]\nScrollMethod=2\n");
+    assert_eq!(other_device.verdict, Verdict::Pass);
+}
+
+#[test]
+fn kernel_modules_are_read_from_the_running_release() {
+    assert_eq!(
+        kernel_modules_state(&fixture_root("root-upgraded")),
+        KernelModules::Missing {
+            release: "7.1.13-2-MANJARO".to_owned()
+        }
+    );
+    assert_eq!(
+        kernel_modules_state(&fixture_root("root-booted")),
+        KernelModules::Installed {
+            release: "7.2.9-1-MANJARO".to_owned(),
+            magicmouse: MagicMouseModule::File(PathBuf::from(
+                "kernel/drivers/hid/hid-magicmouse.ko.zst"
+            )),
+        }
+    );
+    assert_eq!(
+        kernel_modules_state(&fixture_root("root-builtin")),
+        KernelModules::Installed {
+            release: "6.12.0-custom".to_owned(),
+            magicmouse: MagicMouseModule::BuiltIn,
+        }
+    );
+    assert_eq!(
+        kernel_modules_state(&fixture_root("root-no-magicmouse")),
+        KernelModules::Installed {
+            release: "6.12.0-custom".to_owned(),
+            magicmouse: MagicMouseModule::NotFound,
+        }
+    );
+    assert!(matches!(
+        kernel_modules_state(&fixture_root("no-such-root")),
+        KernelModules::UnknownRelease(_)
+    ));
+}
+
+#[test]
+fn kernel_modules_must_exist_for_the_running_kernel() {
+    let check = |root: &str| checks::kernel_modules(&kernel_modules_state(&fixture_root(root)));
+    let upgraded = check("root-upgraded");
+    assert_eq!(upgraded.name, "kernel modules");
+    assert_eq!(upgraded.verdict, Verdict::Fail);
+    assert_eq!(
+        upgraded.detail,
+        "/lib/modules/7.1.13-2-MANJARO does not exist, so the running kernel 7.1.13-2-MANJARO cannot load hid_magicmouse or any other module"
+    );
+    assert_eq!(
+        upgraded.hint.as_deref(),
+        Some(
+            "the kernel was upgraded or removed without a reboot; reboot into the installed kernel"
+        )
+    );
+    let booted = check("root-booted");
+    assert_eq!(booted.verdict, Verdict::Pass);
+    assert_eq!(
+        booted.detail,
+        "/lib/modules/7.2.9-1-MANJARO exists and has hid_magicmouse (kernel/drivers/hid/hid-magicmouse.ko.zst)"
+    );
+    let builtin = check("root-builtin");
+    assert_eq!(builtin.verdict, Verdict::Pass);
+    assert!(builtin.detail.contains("built into the kernel"));
+    let without = check("root-no-magicmouse");
+    assert_eq!(without.verdict, Verdict::Warn);
+    assert!(without.detail.contains("has no hid-magicmouse.ko*"));
+    let unknown = check("no-such-root");
+    assert_eq!(unknown.verdict, Verdict::Warn);
+    assert!(unknown.detail.contains("/proc/sys/kernel/osrelease"));
+}
+
+#[test]
+fn hid_bindings_list_only_magic_mice_with_their_driver() {
+    let binding = |device: &str, driver: Option<&str>| HidBinding {
+        device: device.to_owned(),
+        driver: driver.map(str::to_owned),
+    };
+    assert_eq!(
+        hid_bindings(&fixture_root("root-upgraded")),
+        Ok(vec![binding("0005:004C:0269.000D", Some("hid-generic"))])
+    );
+    assert_eq!(
+        hid_bindings(&fixture_root("root-booted")),
+        Ok(vec![binding("0005:004C:0269.000E", Some("magicmouse"))])
+    );
+    assert_eq!(
+        hid_bindings(&fixture_root("root-no-magicmouse")),
+        Ok(vec![binding("0005:004C:0269.0003", None)])
+    );
+    assert_eq!(hid_bindings(&fixture_root("root-builtin")), Ok(vec![]));
+    assert!(hid_bindings(&fixture_root("no-such-root")).is_err());
+}
+
+#[test]
+fn every_magic_mouse_must_be_bound_to_magicmouse() {
+    let check = |root: &str| {
+        let root = fixture_root(root);
+        checks::hid_driver(
+            hid_bindings(&root).as_deref().map_err(String::as_str),
+            &kernel_modules_state(&root),
+        )
+    };
+    let upgraded = check("root-upgraded");
+    assert_eq!(upgraded.len(), 1);
+    assert_eq!(upgraded[0].name, "HID driver");
+    assert_eq!(upgraded[0].verdict, Verdict::Fail);
+    assert_eq!(
+        upgraded[0].detail,
+        "0005:004C:0269.000D is bound to hid-generic, not magicmouse, so the mouse never reports touches and scrolling cannot work"
+    );
+    assert!(
+        upgraded[0]
+            .hint
+            .as_deref()
+            .unwrap()
+            .contains("see the kernel modules check: reboot")
+    );
+    let booted = check("root-booted");
+    assert_eq!(booted[0].verdict, Verdict::Pass);
+    assert_eq!(
+        booted[0].detail,
+        "0005:004C:0269.000E is bound to magicmouse"
+    );
+    let unbound = check("root-no-magicmouse");
+    assert_eq!(unbound[0].verdict, Verdict::Fail);
+    assert!(unbound[0].detail.contains("is not bound to any driver"));
+    assert!(
+        unbound[0]
+            .hint
+            .as_deref()
+            .unwrap()
+            .contains("sudo modprobe hid_magicmouse")
+    );
+    let absent = check("root-builtin");
+    assert_eq!(absent.len(), 1);
+    assert_eq!(absent[0].verdict, Verdict::Pass);
+    assert_eq!(
+        absent[0].detail,
+        "no Magic Mouse 2 is connected, nothing to check"
+    );
+    let unreadable = check("no-such-root");
+    assert_eq!(unreadable[0].verdict, Verdict::Warn);
+    let two = checks::hid_driver(
+        Ok(&[
+            HidBinding {
+                device: "0005:004C:0269.0001".to_owned(),
+                driver: Some("magicmouse".to_owned()),
+            },
+            HidBinding {
+                device: "0005:004C:0269.0002".to_owned(),
+                driver: Some("hid-generic".to_owned()),
+            },
+        ]),
+        &KernelModules::UnknownRelease("unreadable".to_owned()),
+    );
+    assert_eq!(
+        two.iter().map(|check| check.verdict).collect::<Vec<_>>(),
+        [Verdict::Pass, Verdict::Fail]
+    );
 }
 
 #[test]

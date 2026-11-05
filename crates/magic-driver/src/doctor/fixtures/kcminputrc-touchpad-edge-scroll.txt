@@ -1,0 +1,10 @@
+[Libinput][19780][2][magic-driver touchpad]
+ClickMethod=2
+ScrollMethod=2
+
+[Libinput][2362][9488][PixArt USB Optical Mouse]
+PointerAcceleration=-0.200
+
+[Libinput][76][617][Owner’s Magic Mouse]
+NaturalScroll=true
+ScrollMethod=4

@@ -17,7 +17,7 @@ Run every command from the repository root in a terminal inside the Plasma Wayla
 | 1.2 | `scripts/install.sh --dry-run` | every file listed with `install:`, ends with `dry run finished, nothing was changed`; nothing changed on disk | |
 | 1.3 | `scripts/install.sh` | asks for `sudo` once, ends with `magic-driver installed` | |
 | 1.4 | `magic-driver status` | `Service: active (running), daemon reports: active: Apple Magic Mouse 2 (Bluetooth) on hidrawN`, both virtual devices present, config `missing, defaults are used` or `valid` | |
-| 1.5 | `magic-driver doctor` | no `fail`; `uinput module`, `udev rule`, every ACL, `config`, `keyd`, tap-to-click and disable-while-mouse lines `pass`; the high-resolution line may `warn` about the stock device from before the install | |
+| 1.5 | `magic-driver doctor` | no `fail`; `uinput module`, `udev rule`, every ACL, `kernel modules`, `HID driver` (`is bound to magicmouse`), `config`, `keyd`, tap-to-click, disable-while-mouse and `touchpad scroll method` lines `pass`; the high-resolution line may `warn` about the stock device from before the install | |
 | 1.6 | `ls -l /dev/hidrawN` and `getfacl /dev/hidrawN` (N from `status`) | owner `root:root`, mode `0600` or similar, never world-readable; `user:<you>:rw-` from the ACL only | |
 | 1.7 | `systemctl --user show magic-driver -p NoNewPrivileges -p RestrictAddressFamilies -p MemoryMax -p WatchdogUSec` | `yes`, `AF_UNIX AF_NETLINK`, `67108864`, `2s` | |
 
