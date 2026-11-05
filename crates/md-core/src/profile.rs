@@ -113,7 +113,7 @@ pub const MAGIC_MOUSE_2_BT: Profile = Profile {
         firm_touch_size: 8,
     },
     touch_size_scale: 4,
-    default_palm_size_mm: 20.0,
+    default_palm_size_mm: 30.0,
     default_mouse_motion_threshold: 150.0,
 };
 

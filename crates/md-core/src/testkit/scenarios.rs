@@ -10,8 +10,8 @@ pub const SECOND_FINGER_ID: u8 = 4;
 
 pub fn palm() -> TouchRecord {
     TouchRecord::new(PALM_ID, 100, 1_700)
-        .touch_major(170)
-        .touch_minor(140)
+        .touch_major(210)
+        .touch_minor(180)
         .size(40)
 }
 

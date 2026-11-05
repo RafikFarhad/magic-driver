@@ -39,6 +39,21 @@ impl Context {
         }
     }
 
+    pub fn motion_counts(&self, t: Micros) -> f64 {
+        self.decayed_counts(t)
+    }
+
+    pub fn motion_energy_since(&self, t: Micros, baseline: f64, baseline_t: Micros) -> f64 {
+        let elapsed = t.saturating_sub(baseline_t).as_secs_f64();
+        let carried = baseline * (-elapsed / tau_s()).exp();
+        let rate = (self.decayed_counts(t) - carried).max(0.0) / tau_s();
+        if rate < MOTION_ENERGY_FLOOR {
+            0.0
+        } else {
+            rate
+        }
+    }
+
     pub fn on_button(&mut self, t: Micros, button: Button, pressed: bool) {
         let was_down = !self.pressed.is_empty();
         self.pressed.set(button, pressed);

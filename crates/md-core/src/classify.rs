@@ -43,7 +43,10 @@ impl Decision {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub const MOUSE_MOVING_SUSTAIN: Micros = Micros::from_millis(80);
+pub const PALM_CONFIRM_REPORTS: u8 = 2;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Classified {
     pub track: TrackId,
     pub class: Class,
@@ -51,6 +54,10 @@ pub struct Classified {
     start_t: Micros,
     anchor: SurfacePoint,
     anchor_t: Micros,
+    motion_baseline: f64,
+    motion_baseline_t: Micros,
+    moving_since: Option<Micros>,
+    oversize_reports: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -111,7 +118,6 @@ impl Classifier {
     ) {
         self.decisions.clear();
         let button_down = context.is_button_down();
-        let moving = context.motion_energy(t) > thresholds.mouse_motion_threshold;
 
         let previous = self.entries;
         self.entries.clear();
@@ -127,7 +133,23 @@ impl Classifier {
                     start_t: track.start_t,
                     anchor: track.start_pos,
                     anchor_t: track.start_t,
+                    motion_baseline: context.motion_counts(t),
+                    motion_baseline_t: t,
+                    moving_since: None,
+                    oversize_reports: 0,
                 });
+            let moving =
+                context.motion_energy_since(t, entry.motion_baseline, entry.motion_baseline_t)
+                    > thresholds.mouse_motion_threshold;
+            let mut entry = entry;
+            entry.moving_since = if moving {
+                Some(entry.moving_since.unwrap_or(t))
+            } else {
+                None
+            };
+            let moving_sustained = entry
+                .moving_since
+                .is_some_and(|since| t.saturating_sub(since) >= MOUSE_MOVING_SUSTAIN);
             let input = RuleInput {
                 t,
                 track,
@@ -137,6 +159,7 @@ impl Classifier {
                 thresholds,
                 button_down,
                 moving,
+                moving_sustained,
             };
             let next = classify(entry, &input);
             if next.class != entry.class
@@ -203,6 +226,7 @@ struct RuleInput<'a> {
     thresholds: &'a Thresholds,
     button_down: bool,
     moving: bool,
+    moving_sustained: bool,
 }
 
 fn classify(entry: Classified, input: &RuleInput<'_>) -> Classified {
@@ -227,7 +251,7 @@ fn rejected(entry: Classified, reason: Reason) -> Classified {
 fn deliberate_cancel(input: &RuleInput<'_>) -> Option<Reason> {
     if input.button_down {
         Some(Reason::ClickGuard)
-    } else if input.moving {
+    } else if input.moving_sustained {
         Some(Reason::MouseMoving)
     } else {
         None
@@ -237,19 +261,28 @@ fn deliberate_cancel(input: &RuleInput<'_>) -> Option<Reason> {
 fn candidate(entry: Classified, input: &RuleInput<'_>) -> Classified {
     let track = input.track;
     let thresholds = input.thresholds;
+    let mut entry = entry;
+    let rear = in_rear_zone(input.surface, thresholds.rear_zone, track.start_pos);
     if touch_size_mm(input.surface, input.size_scale, track) > thresholds.palm_size_mm {
-        return rejected(entry, Reason::Palm);
+        entry.oversize_reports = entry.oversize_reports.saturating_add(1);
+        if rear || entry.oversize_reports >= PALM_CONFIRM_REPORTS {
+            return rejected(entry, Reason::Palm);
+        }
+    } else {
+        entry.oversize_reports = 0;
     }
-    if in_rear_zone(input.surface, thresholds.rear_zone, track.start_pos) {
+    if rear {
         return rejected(entry, Reason::RearZone);
     }
     if input.button_down || started_in_click_guard(input) {
         return rejected(entry, Reason::ClickGuard);
     }
-    if input.moving {
+    if input.moving_sustained {
         return rejected(entry, Reason::MouseMoving);
     }
-    let mut entry = entry;
+    if input.moving || entry.oversize_reports > 0 {
+        return dwell_or_hold(entry, input);
+    }
     let travelled = distance_mm(input.surface, entry.anchor, track.pos);
     if travelled >= thresholds.promote_distance_mm && track.last_t > track.start_t {
         return Classified {
@@ -266,6 +299,17 @@ fn candidate(entry: Classified, input: &RuleInput<'_>) -> Classified {
         entry.anchor_t = input.t;
     }
     entry
+}
+
+fn dwell_or_hold(entry: Classified, input: &RuleInput<'_>) -> Classified {
+    if input.t.saturating_sub(input.track.start_t) >= input.thresholds.rest_dwell {
+        return rejected(entry, Reason::Resting);
+    }
+    Classified {
+        anchor: input.track.pos,
+        anchor_t: input.t,
+        ..entry
+    }
 }
 
 fn started_in_click_guard(input: &RuleInput<'_>) -> bool {

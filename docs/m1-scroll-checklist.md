@@ -115,7 +115,7 @@ The thresholds that matter most, with their current defaults (`magic-driver conf
 
 | Symptom | Key | Default |
 |---|---|---|
-| palm or thick finger scrolls | `advanced.touch.palm_size_mm` | 20.0 |
+| palm or thick finger scrolls | `advanced.touch.palm_size_mm` | 30.0 |
 | touches near the rear scroll | `advanced.touch.rear_zone` | 0.35 |
 | scroll cancels while scrolling, or scrolls while moving the mouse | `advanced.touch.mouse_motion_threshold` | 150.0 |
 | scroll starts too late or too easily | `advanced.touch.promote_distance_mm`, `advanced.touch.promote_window_ms` | 1.5, 150 |

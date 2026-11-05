@@ -228,10 +228,16 @@ fn suppressed_ignores_touches_rejected_before_the_cancel() {
 fn mouse_motion_during_scroll_cancels() {
     let mut harness = Harness::new();
     let current = scroll(&mut harness, finger(0, 600), 4);
-    assert_eq!(
-        harness.feed(&report(&[palm(), current]).motion(40, 0)),
-        (RecogniserState::Cancelling, Intent::Freeze)
-    );
+    let mut reports = 0;
+    let cancelled = loop {
+        reports += 1;
+        let result = harness.feed(&report(&[palm(), current]).motion(40, 0));
+        if result.0 != RecogniserState::Scroll || reports == 20 {
+            break result;
+        }
+    };
+    assert_eq!(cancelled, (RecogniserState::Cancelling, Intent::Freeze));
+    assert!((6..=10).contains(&reports));
     assert_eq!(harness.fire(), (RecogniserState::Suppressed, Intent::None));
     lift(&mut harness, current);
     assert_eq!(

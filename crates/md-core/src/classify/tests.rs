@@ -99,11 +99,13 @@ fn touch_size_converts_raw_major_with_the_profile_scale() {
 #[test]
 fn palm_size_rejects_large_contacts_on_either_axis() {
     for touch in [
-        finger(0, 0).touch_major(140),
-        finger(0, 0).touch_major(20).touch_minor(140),
+        finger(0, 0).touch_major(210),
+        finger(0, 0).touch_major(20).touch_minor(210),
     ] {
         let mut harness = Harness::new();
-        let decisions = harness.feed(&start(touch));
+        assert!(harness.feed(&start(touch)).is_empty());
+        assert_eq!(harness.class(touch.id), Some(Class::Candidate));
+        let decisions = harness.feed(&at(touch));
         assert_eq!(harness.class(touch.id), Some(Class::Rejected));
         assert_eq!(harness.reason(touch.id), Some(Reason::Palm));
         assert_eq!(decisions.len(), 1);
@@ -122,6 +124,7 @@ fn palm_size_threshold_follows_the_config() {
     config.advanced.touch.palm_size_mm = 10.0;
     let mut harness = Harness::with_config(config);
     harness.feed(&start(touch));
+    harness.feed(&at(touch));
     assert_eq!(harness.reason(touch.id), Some(Reason::Palm));
 }
 
@@ -154,7 +157,9 @@ fn mouse_motion_rejects_candidates() {
     let mut harness = Harness::new();
     let touch = finger(0, 300);
     harness.feed(&start(touch));
-    harness.feed(&at(touch).motion(30, 0));
+    for _ in 0..9 {
+        harness.feed(&at(touch).motion(30, 0));
+    }
     assert_eq!(harness.reason(2), Some(Reason::MouseMoving));
     for _ in 0..30 {
         harness.feed(&at(moved(touch, -200)));
@@ -176,8 +181,12 @@ fn mouse_motion_cancels_a_deliberate_track() {
     let mut harness = Harness::new();
     let current = promote(&mut harness, finger(0, 600));
     assert_eq!(harness.class(2), Some(Class::Deliberate));
-    let decisions = harness.feed(&at(current).motion(40, 10));
+    let mut decisions = Vec::new();
+    for _ in 0..9 {
+        decisions.extend(harness.feed(&at(current).motion(40, 10)));
+    }
     assert_eq!(harness.reason(2), Some(Reason::MouseMoving));
+    assert_eq!(decisions.len(), 1);
     assert!(decisions[0].cancels_deliberate());
 }
 
@@ -309,7 +318,9 @@ fn rejection_is_sticky_until_lift_and_a_new_touch_starts_fresh() {
     let mut harness = Harness::new();
     let touch = finger(0, 300);
     harness.feed(&start(touch));
-    harness.feed(&at(touch).motion(40, 0));
+    for _ in 0..9 {
+        harness.feed(&at(touch).motion(40, 0));
+    }
     assert_eq!(harness.reason(2), Some(Reason::MouseMoving));
     harness.feed(&at(touch.state(touch_state::LIFT_50)));
     assert_eq!(harness.class(2), None);
@@ -368,4 +379,90 @@ fn reset_forgets_every_track() {
     let mut out = Vec::new();
     harness.engine.handle(Input::Reset, &mut out);
     assert!(harness.classifier().entries().is_empty());
+}
+
+fn slide(harness: &mut Harness, touch: TouchRecord, step: i32, reports: usize) -> TouchRecord {
+    let mut current = touch;
+    for _ in 0..reports {
+        current = moved(current, step);
+        harness.feed(&at(current));
+    }
+    current
+}
+
+#[test]
+fn a_large_fingertip_just_over_twenty_mm_still_scrolls() {
+    let mut harness = Harness::new();
+    let touch = finger(0, -650).touch_major(134).touch_minor(100);
+    harness.feed(&start(touch));
+    let _ = slide(&mut harness, touch, -40, 4);
+    assert_eq!(harness.class(touch.id), Some(Class::Deliberate));
+}
+
+#[test]
+fn one_oversized_landing_report_is_not_a_palm() {
+    let mut harness = Harness::new();
+    let touch = finger(-140, -440);
+    harness.feed(&start(touch.touch_major(180).touch_minor(27)));
+    let _ = slide(&mut harness, touch.touch_major(90), -40, 4);
+    assert_eq!(harness.class(touch.id), Some(Class::Deliberate));
+}
+
+#[test]
+fn a_contact_oversized_on_two_reports_in_a_row_is_a_palm() {
+    let mut harness = Harness::new();
+    let touch = finger(0, 0).touch_major(210);
+    harness.feed(&start(touch.touch_major(90)));
+    harness.feed(&at(touch));
+    assert_eq!(harness.class(touch.id), Some(Class::Candidate));
+    harness.feed(&at(touch));
+    assert_eq!(harness.reason(touch.id), Some(Reason::Palm));
+}
+
+#[test]
+fn pointer_motion_that_ended_before_the_touch_does_not_reject_it() {
+    let mut harness = Harness::new();
+    for dx in [150, 140, 120, 90, 50, 20, 5] {
+        harness.feed(&ReportBuilder::new().motion(dx, 0));
+    }
+    let touch = finger(-630, -880);
+    harness.feed(&start(touch));
+    let _ = slide(&mut harness, touch, -40, 4);
+    assert_eq!(harness.class(touch.id), Some(Class::Deliberate));
+}
+
+#[test]
+fn a_short_nudge_while_the_finger_lands_does_not_reject_it() {
+    let mut harness = Harness::new();
+    let touch = finger(-570, -350);
+    harness.feed(&start(touch));
+    for (dx, dy) in [(6, -4), (7, -7), (4, -2), (1, -1), (1, -1)] {
+        harness.feed(&at(touch).motion(dx, dy));
+    }
+    assert_eq!(harness.class(touch.id), Some(Class::Candidate));
+    let _ = slide(&mut harness, touch, -40, 6);
+    assert_eq!(harness.class(touch.id), Some(Class::Deliberate));
+}
+
+#[test]
+fn a_touch_does_not_promote_while_the_mouse_is_moving() {
+    let mut harness = Harness::new();
+    let touch = finger(0, 300);
+    harness.feed(&start(touch));
+    let mut current = touch;
+    for _ in 0..5 {
+        current = moved(current, -40);
+        harness.feed(&at(current).motion(30, 0));
+    }
+    assert_eq!(harness.class(touch.id), Some(Class::Candidate));
+}
+
+#[test]
+fn a_short_nudge_does_not_cancel_a_scroll() {
+    let mut harness = Harness::new();
+    let current = promote(&mut harness, finger(0, 600));
+    for (dx, dy) in [(6, -4), (7, -7), (4, -2)] {
+        harness.feed(&at(current).motion(dx, dy));
+    }
+    assert_eq!(harness.class(2), Some(Class::Deliberate));
 }

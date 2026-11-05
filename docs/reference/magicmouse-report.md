@@ -113,6 +113,6 @@ The kernel updates touches before buttons within the same report, so the zone de
 
 | Profile field | Value | Status |
 |---|---|---|
-| `default_palm_size_mm` | 20.0 mm | indicative default for `advanced.touch.palm_size_mm`, tuned in E3 |
+| `default_palm_size_mm` | 30.0 mm | default for `advanced.touch.palm_size_mm`; a scrolling finger pressed while holding the mouse measured up to about 29 mm, a resting palm about 31 mm (in the rear zone) |
 | `default_mouse_motion_threshold` | 150.0 mouse counts per second | indicative default for `advanced.touch.mouse_motion_threshold`, tuned in E3 |
 | `id` | `magic-mouse-2-bt` | profile identifier used in recording headers |
