@@ -2,9 +2,7 @@
 
 | | |
 |---|---|
-| Audience | the owner only (ARCHITECTURE 7.5) |
-| Task | E2-T09 |
-| Answers | ARCHITECTURE section 9, assumptions A-1 to A-10 |
+| Audience | the owner only |
 | Results go to | `docs/m0-findings.md` (one section per assumption, field names given below) |
 | Needs | the udev rule from `docs/install-m0.md`, a release build, `libinput` tools (`libinput list-devices`, `libinput debug-events`, needs the `input` group or `sudo`), `wev` |
 
@@ -86,7 +84,7 @@ The prototype modes produce at most as many synthetic fingers as fingers on the 
 3. Terminal B: `libinput debug-events --device /dev/input/eventK`.
 4. Put three fingers flat on the mouse surface and swipe them sideways together, then four if the surface allows it. Watch terminal B for `GESTURE_SWIPE_BEGIN` with the finger count, and watch whether KWin switches desktop.
 5. Swipe up with the same count: does the overview open?
-6. Fast scripted swipes come in E5; here note only whether a slow and a fast manual swipe both trigger.
+6. Fast scripted swipes are tested later; here note only whether a slow and a fast manual swipe both trigger.
 7. Findings fields: "A-6 Plasma version", "A-6 finger count for desktop switch", "A-6 finger count for overview", "A-6 triggered by synthetic swipe", "A-6 fast swipe", "A-6 result". Copy the count into `advanced.gestures.kwin_swipe_fingers` in the findings.
 
 ## 8. A-7: horizontal finger scroll gives browser back and forward
@@ -134,7 +132,7 @@ The prototype modes produce at most as many synthetic fingers as fingers on the 
 4. If the pointer still does not move, turn the mouse off and on.
 5. Findings field: "Stop procedure" (did it ever need step 2 or 4).
 
-## 13. Fixtures for E2-T10
+## 13. Fixtures
 
 Record each scenario into its own file. `record` reads the raw device without grabbing it, so the mouse keeps its stock behaviour while recording, and it refuses to overwrite a file. Stop each recording with Ctrl+C. `magic-driver run` must not be running at the same time.
 
@@ -177,4 +175,4 @@ Findings field: "Fixtures recorded" (list of files, any that failed to replay).
 
 ## 14. Decision
 
-Fill the section "Decision" in `docs/m0-findings.md`: go, adjust or stop. If A-2 or A-3 failed broadly, the fallback from ARCHITECTURE section 9 (pointer-only with high-resolution wheel events plus self-generated momentum) needs your decision; note it there.
+Fill the section "Decision" in `docs/m0-findings.md`: go, adjust or stop. If A-2 or A-3 failed broadly, the fallback (pointer-only with high-resolution wheel events plus self-generated momentum) needs your decision; note it there.

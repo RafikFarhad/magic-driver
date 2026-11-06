@@ -55,7 +55,7 @@ fn empty_file_means_defaults() {
 }
 
 #[test]
-fn default_values_match_architecture() {
+fn default_values_match_the_documented_defaults() {
     let config = Config::default();
     assert_eq!(config.version, 1);
     assert!(config.pointer.middle_click);
@@ -88,7 +88,7 @@ fn default_values_match_architecture() {
 }
 
 #[test]
-fn architecture_minimal_example_parses() {
+fn the_minimal_example_parses() {
     let config = parse_ok(
         "version = 1\n\n[scroll]\nacceleration = \"high\"\n\n[touch]\npalm_rejection = \"high\"\n\n[gestures]\ndouble_tap_overview = false\n",
     );

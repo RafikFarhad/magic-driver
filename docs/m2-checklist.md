@@ -2,9 +2,8 @@
 
 | | |
 |---|---|
-| Audience | the owner only (ARCHITECTURE 7.5); implementers write this list but never run it |
-| Task | E5-T08 (with the owner steps of E5-T03, E5-T04, E5-T05 and E5-T07), closes M2 |
-| Needs | the E5 build installed with `scripts/install.sh` (see `docs/install.md`), the M1 checklists done or at least sections 1 and 2 of `docs/m1-checklist.md`, `libinput` tools, Brave (and Firefox if you use it) |
+| Audience | the owner only; implementers write this list but never run it |
+| Needs | the M2 build installed with `scripts/install.sh` (see `docs/install.md`), the M1 checklists done or at least sections 1 and 2 of `docs/m1-checklist.md`, `libinput` tools, Brave (and Firefox if you use it) |
 | Results | fill the `Result` column of each table (pass, fail, notes), the week log in section 13, then the results table at the end |
 
 Run every command from the repository root in a terminal inside the Plasma Wayland session. `journalctl --user -u magic-driver -f` follows the daemon log live.
@@ -15,7 +14,7 @@ Changing the config always works the same way, below called "edit and reload":
 2. `magic-driver config test`, which must end with `test is successful`;
 3. `systemctl --user reload magic-driver`.
 
-Real Magic Mouse recordings do not exist yet (deferred to E6). The implementer tested every gesture with synthetic scenarios only, so this checklist is the first time the gestures meet the real surface and the real KWin. Section 12 says how to record a fixture when something is wrong.
+Real Magic Mouse recordings do not exist yet. The implementer tested every gesture with synthetic scenarios only, so this checklist is the first time the gestures meet the real surface and the real KWin. Section 12 says how to record a fixture when something is wrong.
 
 ## 0. Preparation
 
@@ -40,7 +39,7 @@ M0 saw KWin switch desktops from raw-forward 3-finger and 4-finger swipes but di
 | 1.5 | If 1.3 or 1.4 did nothing: edit and reload with `[advanced.gestures]` `kwin_swipe_fingers = 3`, repeat 1.2 to 1.4 | write down which count switches desktops and which opens the Overview | |
 | 1.6 | Write the confirmed count in the results table (`kwin_swipe_fingers to use`); if it is not 4, keep it in your config and tell the implementer so the default can change with a fixture | value recorded | |
 
-## 2. Desktop swipe from the surface (FR-31, US-5, E5-T03)
+## 2. Desktop swipe from the surface
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
@@ -50,10 +49,10 @@ M0 saw KWin switch desktops from raw-forward 3-finger and 4-finger swipes but di
 | 2.4 | Two fingers moving forward or backward (vertical) | nothing at all: no scroll, no desktop switch, no overview | |
 | 2.5 | One-finger horizontal scroll in a wide page or Dolphin's details view, ten times | horizontal scrolling only, never a desktop switch | |
 | 2.6 | During a two-finger swipe, lift one finger and keep moving the other | the swipe ends; the remaining finger does not start a scroll until it is lifted and put down again | |
-| 2.7 | Start a two-finger swipe and click during it (FR-42) | the fingers freeze and lift; no scroll; note whether KWin still switched (it may complete a swipe that was already past its threshold) | |
-| 2.8 | Move the mouse with the hand resting as usual for a minute (FR-40, FR-41) | no desktop switch | |
+| 2.7 | Start a two-finger swipe and click during it | the fingers freeze and lift; no scroll; note whether KWin still switched (it may complete a swipe that was already past its threshold) | |
+| 2.8 | Move the mouse with the hand resting as usual for a minute | no desktop switch | |
 
-## 3. Overview from the double tap (FR-31, US-5, E5-T04)
+## 3. Overview from the double tap
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
@@ -65,7 +64,7 @@ M0 saw KWin switch desktops from raw-forward 3-finger and 4-finger swipes but di
 | 3.6 | One-finger double tap, ten times | nothing | |
 | 3.7 | If 3.1 fails often because your taps are slower: edit and reload with `[advanced.gestures]` `double_tap_ms = 450`, repeat 3.1 to 3.4 | note the value that works | |
 
-## 4. Browser back and forward (FR-30, US-4, E5-T05)
+## 4. Browser back and forward
 
 No new gesture: one-finger horizontal scroll arrives as finger-source horizontal scroll (A-7), and the browser turns overscroll at the page edge into back and forward.
 
@@ -77,7 +76,7 @@ No new gesture: one-finger horizontal scroll arrives as finger-source horizontal
 | 4.4 | Firefox (optional, M0 notes you do not use it): same as 4.1 and 4.2 | back and forward | |
 | 4.5 | `sudo libinput debug-events --device /dev/input/eventM` during 4.1 | `POINTER_SCROLL_FINGER` with `horiz` values and a final `0.00/0.0*` stop; no gesture lines | |
 
-## 5. Acceleration presets (FR-23, E5-T01)
+## 5. Acceleration presets
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
@@ -90,7 +89,7 @@ No new gesture: one-finger horizontal scroll arrives as finger-source horizontal
 
 Very long fast strokes with `high` can reach the edge of the large virtual touchpad. The synthetic fingers then stop until you lift, so the scroll stops early; note it if you see it.
 
-## 6. Axis lock (FR-24, E5-T02)
+## 6. Axis lock
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
@@ -99,7 +98,7 @@ Very long fast strokes with `high` can reach the edge of the large virtual touch
 | 6.3 | Edit and reload with `[scroll]` `axis_lock = false`, repeat 6.1 | the page now also drifts sideways | |
 | 6.4 | Restore `axis_lock = true` (or delete the line) and reload | 6.1 behaves as before | |
 
-## 7. Each gesture off individually, then reloaded (FR-33, FR-12)
+## 7. Each gesture off individually, then reloaded
 
 Do each line, check it, then undo it and reload before the next line.
 
@@ -112,14 +111,14 @@ Do each line, check it, then undo it and reload before the next line.
 | 7.5 | `[pointer]` `middle_click = false` | a click in the middle zone is a left click | |
 | 7.6 | Remove all the changes and reload | everything works as in sections 2 to 6 | |
 
-## 8. First touch after connecting (FR-25)
+## 8. First touch after connecting
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
 | 8.1 | Switch the mouse off and on, wait for `active` in the journal, then put one finger down and scroll slowly | the page starts moving smoothly from the first millimetre, no jump of several lines | |
 | 8.2 | Repeat three times | no jump | |
 
-## 9. Suspend and resume ten times (FR-5, US-10)
+## 9. Suspend and resume ten times
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
@@ -130,18 +129,18 @@ Do each line, check it, then undo it and reload before the next line.
 | 9.5 | After the last cycle: a two-finger swipe and a two-finger double tap | both still work | |
 | 9.6 | `journalctl --user -u magic-driver -b -p warning` | no lines, or copy them here | |
 
-## 10. Other adapters (FR-6)
+## 10. Other adapters
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
 | 10.1 | Only if a second Bluetooth adapter is available: pair the mouse through it (or switch adapters) and repeat 0.3 | `active` on the new hidraw node | |
 | 10.2 | If no second adapter is available | write `not available` | |
 
-## 11. Debug mode, live trace and logging (FR-53, FR-54, E5-T06, E5-T07)
+## 11. Debug mode, live trace and logging
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
-| 11.1 | `journalctl --user -u magic-driver -b` after a normal hour of use | only lifecycle lines (starting, config, active, released); no per-report lines (FR-54) | |
+| 11.1 | `journalctl --user -u magic-driver -b` after a normal hour of use | only lifecycle lines (starting, config, active, released); no per-report lines | |
 | 11.2 | `ls -ld $XDG_RUNTIME_DIR/magic-driver` and `ls -l $XDG_RUNTIME_DIR/magic-driver/trace.sock` | directory `drwx------` owned by you, socket `srw-------` owned by you | |
 | 11.3 | `magic-driver trace \| head -n 40` while scrolling | first line `{"type":"hello","protocol_version":1,...}` with the profile and the effective config, then `report`, `decision`, `recogniser` and `output` lines as JSON | |
 | 11.4 | `magic-driver trace \| grep -E '"type":"(decision\|recogniser)"'` while resting the palm, scrolling, swiping and double tapping | `rejected` decisions with reasons such as `palm` or `resting`, `promoted` for the scroll finger, recogniser changes `idle` to `scroll`, `swipe`, `tap_pending` | |
@@ -170,7 +169,7 @@ Every threshold change needs a recording that reproduces the problem, so it beco
 | flicks do not go far enough | `scroll.acceleration`, `advanced.scroll.gain_max` | `medium`, 2.5 |
 | sideways drift while scrolling vertically | `scroll.axis_lock` | true |
 
-The known libinput line `kernel bug: missing right button, assuming it is a clickpad` on device add is expected (M0 A-10). Whether to add `INPUT_PROP_BUTTONPAD` to the virtual touchpad is still an open owner decision; E5 did not change the touchpad capabilities.
+The known libinput line `kernel bug: missing right button, assuming it is a clickpad` on device add is expected (M0 A-10). Whether to add `INPUT_PROP_BUTTONPAD` to the virtual touchpad is still an open owner decision; the gesture work did not change the touchpad capabilities.
 
 ## 13. One week of daily use with gestures (M2 exit)
 
@@ -190,20 +189,20 @@ Targets: fewer than 1 false trigger per hour in total (unintended scrolls, deskt
 
 ## 14. P1 coverage
 
-| PRD P1 requirement | Steps |
+| Requirement | Steps |
 |---|---|
-| FR-5 suspend and resume | 9.1 to 9.6 |
-| FR-6 any adapter, several adapters | 10.1, 10.2 (and `docs/m1-checklist.md` section 7) |
-| FR-12 middle click with an option to turn it off | 7.5 |
-| FR-23 velocity scroll acceleration | 5.1 to 5.6 |
-| FR-24 axis lock | 6.1 to 6.4 |
-| FR-25 no phantom first-touch jump | 8.1, 8.2 |
-| FR-30 browser back and forward | 4.1 to 4.5 |
-| FR-31 desktop switch and Overview gestures | 1.2 to 1.6, 2.1 to 2.6, 3.1 |
-| FR-33 each gesture can be turned off | 7.1 to 7.4, 7.6 |
-| FR-42 no scroll or gesture from a click | 2.7, 3.3 |
-| FR-53 debug mode and live read-only trace | 11.2 to 11.9 |
-| FR-54 journal, quiet by default | 11.1 |
+| suspend and resume | 9.1 to 9.6 |
+| any adapter, several adapters | 10.1, 10.2 (and `docs/m1-checklist.md` section 7) |
+| middle click with an option to turn it off | 7.5 |
+| velocity scroll acceleration | 5.1 to 5.6 |
+| axis lock | 6.1 to 6.4 |
+| no phantom first-touch jump | 8.1, 8.2 |
+| browser back and forward | 4.1 to 4.5 |
+| desktop switch and Overview gestures | 1.2 to 1.6, 2.1 to 2.6, 3.1 |
+| each gesture can be turned off | 7.1 to 7.4, 7.6 |
+| no scroll or gesture from a click | 2.7, 3.3 |
+| debug mode and live read-only trace | 11.2 to 11.9 |
+| journal, quiet by default | 11.1 |
 
 ## Results
 

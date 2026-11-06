@@ -1,6 +1,6 @@
 # Magic Mouse 2 raw report reference
 
-This document is the reference for `md-core::profile::MAGIC_MOUSE_2_BT` and for the report parser in E1. Everything here is taken from the stock kernel driver unless it is marked as an assumption.
+This document is the reference for `md-core::profile::MAGIC_MOUSE_2_BT` and for the report parser. Everything here is taken from the stock kernel driver unless it is marked as an assumption.
 
 | | |
 |---|---|
@@ -17,7 +17,7 @@ This document is the reference for `md-core::profile::MAGIC_MOUSE_2_BT` and for 
 | vendor | `0x004c` | `BT_VENDOR_ID_APPLE` |
 | product | `0x0269` | `USB_DEVICE_ID_APPLE_MAGICMOUSE2` |
 
-Related identities that the kernel driver also binds and v1 does not support: Magic Mouse 2 over USB (vendor `0x05ac`, product `0x0269`), USB-C Magic Mouse (product `0x0323`), first generation Magic Mouse (product `0x030d`, report `0x29`). They are candidates for later profiles (E7).
+Related identities that the kernel driver also binds and v1 does not support: Magic Mouse 2 over USB (vendor `0x05ac`, product `0x0269`), USB-C Magic Mouse (product `0x0323`), first generation Magic Mouse (product `0x030d`, report `0x29`). They are candidates for later profiles.
 
 ## Report `0x12`
 
@@ -64,7 +64,7 @@ On the stock device the kernel reports `ABS_MT_TOUCH_MAJOR` and `ABS_MT_TOUCH_MI
 
 ### Touch states
 
-| State | Kernel meaning | Observed on the owner's mouse (PRD section 10) |
+| State | Kernel meaning | Observed on the owner's mouse |
 |---|---|---|
 | `0x00` | `TOUCH_STATE_NONE`, not down | gone |
 | `0x20` | possibly a near-field reading (kernel comment) | near or hovering |
@@ -72,7 +72,7 @@ On the stock device the kernel reports `ABS_MT_TOUCH_MAJOR` and `ABS_MT_TOUCH_MI
 | `0x40` | `TOUCH_STATE_DRAG` | drag |
 | `0x50`, `0x60`, `0x70` | not named | lifting |
 
-The kernel treats every state other than `0x00` as down, including `0x20`. magic-driver deliberately differs: hover is never a contact (ARCHITECTURE 4.1 step 2).
+The kernel treats every state other than `0x00` as down, including `0x20`. magic-driver deliberately differs: hover is never a contact.
 
 ## Surface geometry
 
@@ -94,9 +94,9 @@ The kernel comment states the sizes are "not precise, but close enough".
 | X | toward the right side of the mouse | `emulate_3button`: a firm touch with `x < -350` is a left click, `x > 350` a right click |
 | Y (after negation) | toward the rear of the mouse, where the palm rests | kernel comment: the device's Y is inverted relative to pointer motion, and the driver keeps the origin and negates Y; pointer motion `REL_Y` grows toward the user |
 
-The Y direction is derived from the kernel comment, not measured. It is to be confirmed with the first real fixtures (E2-T10).
+The Y direction is derived from the kernel comment, not measured. It is to be confirmed with the first real fixtures.
 
-## Button emulation (reference for E1-T04)
+## Button emulation
 
 The kernel decides buttons in `magicmouse_emit_buttons(msc, clicks & 3)`:
 
@@ -114,5 +114,5 @@ The kernel updates touches before buttons within the same report, so the zone de
 | Profile field | Value | Status |
 |---|---|---|
 | `default_palm_size_mm` | 30.0 mm | default for `advanced.touch.palm_size_mm`; a scrolling finger pressed while holding the mouse measured up to about 29 mm, a resting palm about 31 mm (in the rear zone) |
-| `default_mouse_motion_threshold` | 150.0 mouse counts per second | indicative default for `advanced.touch.mouse_motion_threshold`, tuned in E3 |
+| `default_mouse_motion_threshold` | 150.0 mouse counts per second | default for `advanced.touch.mouse_motion_threshold` |
 | `id` | `magic-mouse-2-bt` | profile identifier used in recording headers |

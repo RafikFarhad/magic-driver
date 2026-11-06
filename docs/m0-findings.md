@@ -2,8 +2,7 @@
 
 | | |
 |---|---|
-| Status | filled from the owner's results; fixtures and some A-6 details deferred to the E6 inspector |
-| Task | E2-T10 |
+| Status | filled from the owner's results; fixtures and some A-6 details deferred to the inspector |
 | Filled by | the owner, following `docs/m0-checklist.md` |
 | Signed off | owner, go |
 
@@ -48,7 +47,7 @@ Replace every `pending` value with the observed result. Keep excerpts short.
 | A-2 libinput excerpt | `POINTER_SCROLL_FINGER ... vert 2.37/0.0* horiz -1.31/0.0* (finger)` while moving, ending with `vert 0.00/0.0* horiz 0.00/0.0* (finger)` after the lift |
 | A-2 wev excerpt | not recorded |
 | A-2 horizontal | yes, `horiz` values up to -4.21 with a final `0.00/0.0*` scroll stop |
-| A-2 result | pass; a forward slide also produced a large horizontal component, to verify with the E6 inspector |
+| A-2 result | pass; a forward slide also produced a large horizontal component, to verify with the inspector |
 
 ## A-3, A-4, A-5 Per-app momentum matrix
 
@@ -77,9 +76,9 @@ Replace every `pending` value with the observed result. Keep excerpts short.
 | A-6 finger count for desktop switch | not recorded; KWin switched desktop from a raw-forward 3 and 4 finger swipe |
 | A-6 finger count for overview | not recorded |
 | A-6 triggered by synthetic swipe | yes, libinput reports `GESTURE_SWIPE_BEGIN 3` and `4` from raw-forward and KWin switched desktop |
-| A-6 fast swipe | deferred to E5 |
-| `advanced.gestures.kwin_swipe_fingers` to use | keep the default 4 until E5 confirms |
-| A-6 result | pass (KWin reacts to synthetic swipes), finger counts to confirm in E5 |
+| A-6 fast swipe | deferred to the gesture work |
+| `advanced.gestures.kwin_swipe_fingers` to use | keep the default 4 until the gesture work confirms it |
+| A-6 result | pass (KWin reacts to synthetic swipes), finger counts to confirm in the gesture work |
 
 ## A-7 Browser back and forward
 
@@ -120,19 +119,19 @@ Replace every `pending` value with the observed result. Keep excerpts short.
 
 | Scenario file | Recorded | Replays offline |
 |---|---|---|
-| `idle-resting-palm.rec` | deferred to E6 | deferred to E6 |
-| `move-fingers-resting.rec` | deferred to E6 | deferred to E6 |
-| `slow-scroll.rec` | deferred to E6 | deferred to E6 |
-| `flick.rec` | deferred to E6 | deferred to E6 |
-| `horizontal-scroll.rec` | deferred to E6 | deferred to E6 |
-| `click-left.rec` | deferred to E6 | deferred to E6 |
-| `click-right.rec` | deferred to E6 | deferred to E6 |
-| `click-middle.rec` | deferred to E6 | deferred to E6 |
-| `click-while-touching.rec` | deferred to E6 | deferred to E6 |
-| `two-finger-swipe.rec` | deferred to E6 | deferred to E6 |
-| `two-finger-double-tap.rec` | deferred to E6 | deferred to E6 |
-| `connect-first-touch.rec` | deferred to E6 | deferred to E6 |
-| real `magic-mouse-2-bt.udev` capture handed over | deferred to E6 | |
+| `idle-resting-palm.rec` | deferred to the inspector | deferred to the inspector |
+| `move-fingers-resting.rec` | deferred to the inspector | deferred to the inspector |
+| `slow-scroll.rec` | deferred to the inspector | deferred to the inspector |
+| `flick.rec` | deferred to the inspector | deferred to the inspector |
+| `horizontal-scroll.rec` | deferred to the inspector | deferred to the inspector |
+| `click-left.rec` | deferred to the inspector | deferred to the inspector |
+| `click-right.rec` | deferred to the inspector | deferred to the inspector |
+| `click-middle.rec` | deferred to the inspector | deferred to the inspector |
+| `click-while-touching.rec` | deferred to the inspector | deferred to the inspector |
+| `two-finger-swipe.rec` | deferred to the inspector | deferred to the inspector |
+| `two-finger-double-tap.rec` | deferred to the inspector | deferred to the inspector |
+| `connect-first-touch.rec` | deferred to the inspector | deferred to the inspector |
+| real `magic-mouse-2-bt.udev` capture handed over | deferred to the inspector | |
 
 ## Decision
 
@@ -140,6 +139,6 @@ Replace every `pending` value with the observed result. Keep excerpts short.
 |---|---|
 | Decision (go, adjust, stop) | go |
 | A-2 or A-3 failed broadly | no |
-| Fallback decision (only if A-2 or A-3 failed broadly, ARCHITECTURE section 9) | not needed |
-| Architecture adjustments to record in ARCHITECTURE section 11 | open: whether to add `INPUT_PROP_BUTTONPAD` to the virtual touchpad (D4) to silence the clickpad warning; none decided |
+| Fallback decision (only if A-2 or A-3 failed broadly) | not needed |
+| Design adjustments | open: whether to add `INPUT_PROP_BUTTONPAD` to the virtual touchpad to silence the clickpad warning; none decided |
 | Signed off by and date | Farhad, 2026-10-26 |

@@ -2,8 +2,7 @@
 
 | | |
 |---|---|
-| Audience | the owner only (ARCHITECTURE 7.5); implementers only ever run the scripts with `--dry-run` |
-| Task | E4-T07 |
+| Audience | the owner only; implementers only ever run the scripts with `--dry-run` |
 | Replaces | `docs/install-m0.md` (the M0 rule-only install) |
 | Undo | section 6, `scripts/uninstall.sh` |
 
@@ -89,7 +88,7 @@ The service restarts on its own one second after any crash, and systemd kills it
 
 ## 5. Stock driver options (`/etc/modprobe.d/hid_magicmouse.conf`)
 
-magic-driver never changes the stock driver or its options (NFR-8). While magic-driver is active the stock device is grabbed, so its options have no visible effect; they only shape the fallback, that is the behaviour whenever magic-driver is stopped, restarting or degraded.
+magic-driver never changes the stock driver or its options. While magic-driver is active the stock device is grabbed, so its options have no visible effect; they only shape the fallback, that is the behaviour whenever magic-driver is stopped, restarting or degraded.
 
 | Option | While magic-driver is active | Effect on the fallback |
 |---|---|---|

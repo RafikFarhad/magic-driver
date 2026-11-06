@@ -2,12 +2,11 @@
 
 | | |
 |---|---|
-| Audience | the owner only (ARCHITECTURE 7.5); implementers never run these commands |
-| Task | E2-T08 |
+| Audience | the owner only; implementers never run these commands |
 | Installs | `/etc/udev/rules.d/70-magic-driver.rules` and nothing else |
 | Undo | section "Remove the rule" below |
 
-The M0 prototype runs from a terminal as your normal user. It needs three permissions, granted through `uaccess` to the user of the active local seat session (D7):
+The M0 prototype runs from a terminal as your normal user. It needs three permissions, granted through `uaccess` to the user of the active local seat session:
 
 - read the Magic Mouse 2 raw device (`/dev/hidrawN`, today `root:root 0600`);
 - read and grab the Magic Mouse 2 stock device (`/dev/input/eventN`);

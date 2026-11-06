@@ -25,7 +25,7 @@ fn service_lines() -> Vec<String> {
 }
 
 #[test]
-fn the_service_unit_matches_architecture_section_6() {
+fn the_service_unit_has_the_expected_hardening_and_watchdog() {
     let lines = service_lines();
     for expected in [
         "[Unit]",

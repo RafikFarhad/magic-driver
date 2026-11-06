@@ -4,7 +4,6 @@
 |---|---|
 | Binary | `magic-driver-inspector` (crate `crates/magic-driver-inspector`), optional, installed with `scripts/install.sh --with-inspector` |
 | Launcher | `magic-driver inspect [--replay <file>]` runs `magic-driver-inspector` from the directory of `magic-driver` or else from `PATH`, or prints how to install it |
-| Requirements | PRD FR-56, ARCHITECTURE D9 and 4.5, toolkit choice in `docs/inspector-toolkit.md` |
 
 A read-only diagnostic window. It never writes to the trace socket, never changes the config of the running daemon and never opens an input device.
 
@@ -13,7 +12,7 @@ A read-only diagnostic window. It never writes to the trace socket, never change
 | Command | Source |
 |---|---|
 | `magic-driver inspect --replay rec.txt` | offline: loads a recording (`magic-driver record`), runs `md-core` in-process and plays the trace it produces; no daemon and no device needed |
-| `magic-driver inspect` | live: subscribes to `$XDG_RUNTIME_DIR/magic-driver/trace.sock` of the running daemon (owner only, ARCHITECTURE 7.5) |
+| `magic-driver inspect` | live: subscribes to `$XDG_RUNTIME_DIR/magic-driver/trace.sock` of the running daemon (owner only) |
 | `magic-driver-inspector --replay rec.txt --config other.toml` | offline with another config file; without `--config` the user config `~/.config/magic-driver/config.toml` is used if it exists, else the defaults |
 | `magic-driver-inspector --socket PATH` | live from another socket path |
 

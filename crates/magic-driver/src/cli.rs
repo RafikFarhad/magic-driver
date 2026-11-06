@@ -138,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn all_architecture_subcommands_parse() {
+    fn all_subcommands_parse() {
         let cases: [&[&str]; 17] = [
             &["run"],
             &["run", "--debug"],

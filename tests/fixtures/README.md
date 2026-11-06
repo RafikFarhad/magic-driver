@@ -1,10 +1,10 @@
 # Test fixtures
 
-Recorded raw report streams used by scenario tests (ARCHITECTURE 7.2). Every fixture can be replayed without hardware.
+Recorded raw report streams used by scenario tests. Every fixture can be replayed without hardware.
 
 ## Format
 
-Fixtures use the recording format from ARCHITECTURE 5.2, implemented in `md-core::recording`:
+Fixtures use the recording format implemented in `md-core::recording`:
 
 ```text
 magic-driver-recording format=1 profile=magic-mouse-2-bt magic-driver=0.1.0 kernel=7.1.13-2-MANJARO start=1767225600
@@ -29,11 +29,11 @@ tests/fixtures/<profile id>/<scenario>.rec
 
 ## How fixtures are produced
 
-Real fixtures are recorded by the owner only, never by an implementer (ARCHITECTURE 7.5):
+Real fixtures are recorded by the owner only, never by an implementer:
 
-1. The owner runs `magic-driver record tests/fixtures/magic-mouse-2-bt/<scenario>.rec` (available from E2-T07). It reads the raw device without grabbing it and refuses to overwrite an existing file.
+1. The owner runs `magic-driver record tests/fixtures/magic-mouse-2-bt/<scenario>.rec`. It reads the raw device without grabbing it and refuses to overwrite an existing file.
 2. The owner performs the scenario with the real mouse and stops the recording with Ctrl+C.
-3. The owner commits the file. The list of fixtures wanted for M0 is in E2-T10.
+3. The owner commits the file. The list of fixtures wanted is in `docs/m0-checklist.md` section 13.
 
 Before any real recording exists, tests build reports with `md_core::testkit::ReportBuilder` (enable the `test-support` feature of `md-core` as a dev-dependency) and write them with `md_core::recording::RecordingWriter`. `crates/md-core/tests/scenario_example.rs` shows the pattern.
 

@@ -2,15 +2,14 @@
 
 | | |
 |---|---|
-| Audience | the owner only (ARCHITECTURE 7.5); implementers write this list but never run it |
-| Tasks | owner steps of E6-T01 (spikes), E6-T04 (live mode), E6-T05 (Received panel), E6-T06 (install), and the M3 exit criterion |
-| Needs | the E6 build, the M2 checklist done or at least `magic-driver status` showing `active`, a Plasma 6 Wayland session |
+| Audience | the owner only; implementers write this list but never run it |
+| Needs | the M3 build, the M2 checklist done or at least `magic-driver status` showing `active`, a Plasma 6 Wayland session |
 | Results | fill the `Result` column (pass, fail, notes) and the results table at the end |
 | Status | waiting for the owner |
 
 Run every command from the repository root in a terminal inside the Plasma Wayland session. The implementer built the spikes and the inspector and tested the inspector's logic headless with synthetic scenarios and a fake trace server; no real recording exists yet, and nobody has opened the window on a desktop.
 
-## 0. Preparation and install (E6-T06)
+## 0. Preparation and install
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
@@ -21,7 +20,7 @@ Run every command from the repository root in a terminal inside the Plasma Wayla
 | 0.5 | `grep inspector ~/.local/share/magic-driver/install-manifest` | `system /usr/local/bin/magic-driver-inspector` | |
 | 0.6 | `magic-driver status` | `active: Apple Magic Mouse 2 (Bluetooth) on hidrawN` | |
 
-## 1. Toolkit spikes (E6-T01)
+## 1. Toolkit spikes
 
 Compare what you see with the table in `docs/inspector-toolkit.md`.
 
@@ -39,7 +38,7 @@ Compare what you see with the table in `docs/inspector-toolkit.md`.
 | 1.10 | If you have a wheel mouse: one notch | `source=Some(Wheel)`, `discrete 1` (or -1) and, with `wl_seat` 8 or later, `value120 120` | |
 | 1.11 | Two-finger swipe sideways | either nothing (KWin switches desktops and keeps the gesture) or `swipe Begin ... fingers: N`, `Update`, `End` lines | |
 
-## 2. Offline replay (E6-T03)
+## 2. Offline replay
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
@@ -51,7 +50,7 @@ Compare what you see with the table in `docs/inspector-toolkit.md`.
 | 2.6 | At the click | a button row in the pointer events, the touches around it rejected with `click guard`, recogniser `cancelling` then `idle` | |
 | 2.7 | Switch palm rejection to `low` and `high`, acceleration to `off` and `high` | the decisions and the synthetic finger travel change; `reset config` restores them | |
 
-## 3. Live mode (E6-T04)
+## 3. Live mode
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
@@ -62,7 +61,7 @@ Compare what you see with the table in `docs/inspector-toolkit.md`.
 | 3.5 | `systemctl --user stop magic-driver`, wait 3 s, `systemctl --user start magic-driver` | `cannot connect to ...trace.sock ...; retrying` while stopped, then `connected`; the mouse falls back and returns as usual | |
 | 3.6 | `ls -l $XDG_RUNTIME_DIR/magic-driver/` while the inspector runs | still only `trace.sock` with mode `srw-------` | |
 
-## 4. Received panel (E6-T05)
+## 4. Received panel
 
 Keep the pointer over the inspector window for these steps.
 
@@ -87,7 +86,7 @@ Keep the pointer over the inspector window for these steps.
 | 5.5 | End to end: scroll, flick, touch to stop, two-finger swipe, two-finger double tap with the inspector live | each intent shows its recogniser state and synthetic fingers in Decisions; scroll and hold reach the Received panel; KWin performs the swipe and the Overview | |
 | 5.6 | Keep the recordings that show a problem | attach them to the report; they become the first real fixtures | |
 
-## 6. Uninstall check (E6-T06)
+## 6. Uninstall check
 
 | Step | Do | Expect | Result |
 |---|---|---|---|
