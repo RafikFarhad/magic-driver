@@ -4,3 +4,7 @@ target/
 /docs/PRD.md
 /docs/ARCHITECTURE.md
 /docs/epics/
+/packaging/arch/src/
+/packaging/arch/pkg/
+/packaging/arch/magic-driver/
+/packaging/arch/*.pkg.tar.*

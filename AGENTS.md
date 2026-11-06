@@ -57,6 +57,7 @@ The toolchain is pinned in `rust-toolchain.toml` (1.98.1 with rustfmt and clippy
 
 | Task | Command |
 |---|---|
+| Shortcuts | `make help` lists `make build`, `make test`, `make check`, `make package` and the rest |
 | Full gate, run before every commit | `scripts/check.sh` (fmt, clippy pedantic with `-D warnings`, all tests, the two dependency checks, shellcheck) |
 | Build | `cargo build --release --locked -p magic-driver -p magic-driver-inspector` |
 | Tests | `cargo test --locked --workspace` |
@@ -74,14 +75,14 @@ The developer's own desktop is never a test target. These rules apply to every c
 
 Allowed:
 
-- editing code and docs, `cargo build`, `cargo test` (default set), `cargo clippy`, `cargo fmt`, `scripts/check.sh`
+- editing code and docs, `cargo build`, `cargo test` (default set), `cargo clippy`, `cargo fmt`, `scripts/check.sh`, and the matching `make build`, `make debug`, `make test`, `make check`, `make fmt`, `make lint`, `make package`, `make doctor`, `make status`
 - `magic-driver replay <file>` without `--emit`, `magic-driver config test`, `magic-driver config defaults`
 - read-only inspection: `magic-driver status`, `magic-driver doctor`, `ls -l /dev/...`, `getfacl`, `udevadm info`, reading `/sys`
 - `scripts/install.sh --dry-run`, `scripts/uninstall.sh --dry-run`, `makepkg` without installing
 
 Forbidden unless the person whose machine it is asks for that exact action:
 
-- `magic-driver run`, `magic-driver record`, `magic-driver replay --emit`
+- `magic-driver run`, `magic-driver record`, `magic-driver replay --emit`, and `make run`, `make install`, `make enable`, `make disable`
 - live `magic-driver trace` or `magic-driver inspect` against someone's running daemon
 - any test or tool that opens `/dev/uinput`, `/dev/hidraw*` or `/dev/input/event*`, or creates, grabs or destroys an input device
 - `scripts/install.sh` or `scripts/uninstall.sh` without `--dry-run`, `pacman -U` or `makepkg -i`
