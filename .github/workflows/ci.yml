@@ -4,13 +4,18 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
     container:
       image: rust:1.98.1-bookworm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
 
       - name: Refuse to run with input device nodes visible
         run: |
@@ -26,10 +31,18 @@ jobs:
         run: |
           set -eu
           apt-get update
-          apt-get install -y --no-install-recommends libudev-dev pkg-config shellcheck
+          apt-get install -y --no-install-recommends \
+            libudev-dev pkg-config shellcheck
 
       - name: Install the pinned toolchain
         run: rustup toolchain install
 
-      - name: Run scripts/check.sh
-        run: scripts/check.sh
+      - name: Create an unprivileged user
+        run: |
+          set -eu
+          useradd --create-home builder
+          chown -R builder:builder \
+            "$GITHUB_WORKSPACE" "$CARGO_HOME" "$RUSTUP_HOME"
+
+      - name: Run scripts/check.sh as the unprivileged user
+        run: runuser -u builder -- scripts/check.sh
