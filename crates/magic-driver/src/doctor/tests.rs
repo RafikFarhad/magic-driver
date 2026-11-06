@@ -32,13 +32,26 @@ fn the_installed_rule_must_match_the_shipped_one() {
     let missing = checks::udev_rule(None, SHIPPED_RULE);
     assert_eq!(missing.verdict, Verdict::Fail);
     assert!(missing.hint.unwrap().contains("scripts/install.sh"));
-    let same = checks::udev_rule(Some(&format!("{SHIPPED_RULE}\n\n")), SHIPPED_RULE);
+    assert!(
+        missing
+            .detail
+            .contains("/usr/lib/udev/rules.d/70-magic-driver.rules")
+    );
+    let padded = format!("{SHIPPED_RULE}\n\n");
+    let same = checks::udev_rule(Some((RULE_PATHS[0], &padded)), SHIPPED_RULE);
     assert_eq!(same.verdict, Verdict::Pass);
     let old = SHIPPED_RULE.replace("TAG+=\"uaccess\"", "MODE=\"0666\"");
     assert_eq!(
-        checks::udev_rule(Some(&old), SHIPPED_RULE).verdict,
+        checks::udev_rule(Some((RULE_PATHS[0], &old)), SHIPPED_RULE).verdict,
         Verdict::Warn
     );
+}
+
+#[test]
+fn a_packaged_rule_in_usr_lib_counts_as_installed() {
+    let packaged = checks::udev_rule(Some((RULE_PATHS[1], SHIPPED_RULE)), SHIPPED_RULE);
+    assert_eq!(packaged.verdict, Verdict::Pass);
+    assert!(packaged.detail.starts_with("/usr/lib/udev/rules.d/"));
 }
 
 #[test]
@@ -120,23 +133,21 @@ fn acl_checks_pass_warn_or_fail_per_node() {
 
 #[test]
 fn uinput_must_exist_and_load_on_boot() {
-    let modules = "uinput\n";
-    assert_eq!(
-        checks::uinput(true, true, Some(modules)).verdict,
-        Verdict::Pass
-    );
-    assert_eq!(
-        checks::uinput(true, false, Some(modules)).verdict,
-        Verdict::Pass
-    );
+    let modules = Some((MODULES_LOAD_PATHS[0], "uinput\n"));
+    assert_eq!(checks::uinput(true, true, modules).verdict, Verdict::Pass);
+    assert_eq!(checks::uinput(true, false, modules).verdict, Verdict::Pass);
     assert_eq!(checks::uinput(true, true, None).verdict, Verdict::Warn);
     assert_eq!(
-        checks::uinput(true, true, Some("evdev\n")).verdict,
+        checks::uinput(true, true, Some((MODULES_LOAD_PATHS[0], "evdev\n"))).verdict,
         Verdict::Warn
     );
-    assert_eq!(
-        checks::uinput(false, false, Some(modules)).verdict,
-        Verdict::Fail
+    assert_eq!(checks::uinput(false, false, modules).verdict, Verdict::Fail);
+    let packaged = checks::uinput(true, true, Some((MODULES_LOAD_PATHS[1], "uinput\n")));
+    assert_eq!(packaged.verdict, Verdict::Pass);
+    assert!(
+        packaged
+            .detail
+            .contains("/usr/lib/modules-load.d/magic-driver.conf")
     );
 }
 
@@ -488,7 +499,7 @@ fn service_state_is_parsed_from_systemctl_show() {
 #[test]
 fn the_report_lists_every_check_with_hints_and_a_total() {
     let found = vec![
-        checks::udev_rule(Some(SHIPPED_RULE), SHIPPED_RULE),
+        checks::udev_rule(Some((RULE_PATHS[0], SHIPPED_RULE)), SHIPPED_RULE),
         checks::uinput(true, true, None),
         checks::udev_rule(None, SHIPPED_RULE),
     ];

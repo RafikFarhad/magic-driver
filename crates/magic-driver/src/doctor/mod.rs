@@ -12,8 +12,8 @@ use nix::unistd::{Uid, User};
 use md_core::profile::Profile;
 
 use self::checks::{
-    Check, HidBinding, KernelModules, MAGIC_MOUSE_MODULE_FILE, MODULES_DIR, MODULES_LOAD_PATH,
-    MagicMouseModule, NodeAcl, RULE_PATH, ServiceState, Verdict,
+    Check, HidBinding, KernelModules, MAGIC_MOUSE_MODULE_FILE, MODULES_DIR, MODULES_LOAD_PATHS,
+    MagicMouseModule, NodeAcl, RULE_PATHS, ServiceState, Verdict,
 };
 use crate::config_file::{self, ConfigLocation, LoadOutcome, default_config_path};
 use crate::discovery::parse_hid_id;
@@ -234,10 +234,17 @@ fn hid_bindings(root: &Path) -> Result<Vec<HidBinding>, String> {
     Ok(bindings)
 }
 
+fn first_readable(paths: &[&'static str]) -> Option<(&'static str, String)> {
+    paths
+        .iter()
+        .find_map(|path| fs::read_to_string(path).ok().map(|text| (*path, text)))
+}
+
 pub fn collect() -> Vec<Check> {
     let mut found = Vec::new();
+    let rule = first_readable(&RULE_PATHS);
     found.push(checks::udev_rule(
-        fs::read_to_string(RULE_PATH).ok().as_deref(),
+        rule.as_ref().map(|(path, text)| (*path, text.as_str())),
         SHIPPED_RULE,
     ));
     let user = current_user();
@@ -285,7 +292,9 @@ pub fn collect() -> Vec<Check> {
     found.push(checks::uinput(
         uinput.exists(),
         Path::new("/sys/module/uinput").exists(),
-        fs::read_to_string(MODULES_LOAD_PATH).ok().as_deref(),
+        first_readable(&MODULES_LOAD_PATHS)
+            .as_ref()
+            .map(|(path, text)| (*path, text.as_str())),
     ));
     let root = Path::new("/");
     let modules = kernel_modules_state(root);

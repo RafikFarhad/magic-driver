@@ -8,7 +8,7 @@ Early, personal project. It is tested on one machine with one mouse.
 
 ## Install
 
-See `docs/install.md`. The optional diagnostic window is described in `docs/inspector.md`.
+On Arch Linux, build the package from `packaging/arch/PKGBUILD` (see `docs/install.md`, section "Arch Linux package"). Anywhere else, use `scripts/install.sh` as described in `docs/install.md`. The optional diagnostic window is described in `docs/inspector.md`.
 
 ## License
 
@@ -21,3 +21,9 @@ The inspector bundles no fonts. It uses the fonts already installed on the syste
 ## Trademarks
 
 This project is not affiliated with, endorsed by or sponsored by Apple Inc. Apple and Magic Mouse are trademarks of Apple Inc., registered in the U.S. and other countries. The names are used only to say which device this software works with.
+
+## Vibe check
+
+This driver was vibe-coded from scratch. It works on exactly one mouse, on one desk, under one very specific mood, and reading the source is not recommended for anyone who wants to keep their weekend.
+
+Contributions are welcome. Bring your friendly neighbourhood LLM, or write it bare-handed if you are feeling brave. The review process is rigorous: my LLM reads it, says it looks fine, and then I scroll for a bit. If my LLM approves and my mouse still scrolls, it gets merged. If it does not, we will blame the palm rejection.

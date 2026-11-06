@@ -6,6 +6,41 @@
 | Replaces | `docs/install-m0.md` (the M0 rule-only install) |
 | Undo | section 6, `scripts/uninstall.sh` |
 
+On Arch Linux, prefer the package in section 0. Sections 1 to 6 describe the script install for other systems; do not mix the two.
+
+## 0. Arch Linux package
+
+`packaging/arch/PKGBUILD` builds `magic-driver-git` from the git repository and installs:
+
+| File | Purpose |
+|---|---|
+| `/usr/bin/magic-driver`, `/usr/bin/magic-driver-inspector` | the driver and the optional inspector |
+| `/usr/lib/udev/rules.d/70-magic-driver.rules` | `uaccess` ACLs for the mouse nodes and `/dev/uinput` |
+| `/usr/lib/modules-load.d/magic-driver.conf` | loads `uinput` on boot |
+| `/usr/lib/systemd/user/magic-driver.service` | the user service, installed disabled |
+| `/usr/share/doc/magic-driver/` | `config.example.toml` and these docs |
+
+pacman's systemd hooks reload udev and load `uinput` during the install. The service stays off until you enable it.
+
+```sh
+mkdir -p ~/build/magic-driver && cp packaging/arch/PKGBUILD packaging/arch/magic-driver.install ~/build/magic-driver/
+cd ~/build/magic-driver
+makepkg -si
+systemctl --user enable --now magic-driver
+magic-driver status
+magic-driver doctor
+```
+
+`makepkg` clones the GitHub repository. To build your local checkout instead, set the source before `makepkg`:
+
+```sh
+MAGIC_DRIVER_SOURCE="file://$HOME/projects/magic-driver" makepkg -si
+```
+
+It builds the committed `HEAD` of that checkout, not uncommitted changes.
+
+Turn it off with `systemctl --user disable --now magic-driver`; the stock driver takes over at once. Remove it with `sudo pacman -R magic-driver-git`. If you installed with `scripts/install.sh` before, run `scripts/uninstall.sh` first, so the files in `/usr/local/bin`, `/etc` and `~/.config/systemd/user` do not shadow the package's.
+
 magic-driver runs as a systemd user service in your Plasma session. One install step needs `sudo`: the binary, the udev rule and the `uinput` modules-load file. Everything else lives in your home directory.
 
 ## 1. Before you install

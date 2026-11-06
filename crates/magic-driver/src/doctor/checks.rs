@@ -5,8 +5,14 @@ use std::path::{Path, PathBuf};
 use crate::config_file::{LoadOutcome, format_diagnostic};
 use crate::io::uinput::{POINTER_IDENTITY, TOUCHPAD_IDENTITY, VirtualDeviceIdentity};
 
-pub const RULE_PATH: &str = "/etc/udev/rules.d/70-magic-driver.rules";
-pub const MODULES_LOAD_PATH: &str = "/etc/modules-load.d/magic-driver.conf";
+pub const RULE_PATHS: [&str; 2] = [
+    "/etc/udev/rules.d/70-magic-driver.rules",
+    "/usr/lib/udev/rules.d/70-magic-driver.rules",
+];
+pub const MODULES_LOAD_PATHS: [&str; 2] = [
+    "/etc/modules-load.d/magic-driver.conf",
+    "/usr/lib/modules-load.d/magic-driver.conf",
+];
 pub const HIRES_WARNING: &str = "high-resolution scroll";
 pub const MAGIC_MOUSE_KEYD_ID: &str = "004c:0269";
 pub const MODULES_DIR: &str = "/lib/modules";
@@ -67,8 +73,7 @@ impl Check {
     }
 }
 
-const REINSTALL_HINT: &str =
-    "run scripts/install.sh from the magic-driver repository (see docs/install.md)";
+const REINSTALL_HINT: &str = "install the magic-driver package, or run scripts/install.sh from the magic-driver repository (see docs/install.md)";
 
 fn normalized(text: &str) -> Vec<&str> {
     text.lines()
@@ -77,23 +82,24 @@ fn normalized(text: &str) -> Vec<&str> {
         .collect()
 }
 
-pub fn udev_rule(installed: Option<&str>, shipped: &str) -> Check {
+pub fn udev_rule(installed: Option<(&str, &str)>, shipped: &str) -> Check {
     let name = "udev rule";
     match installed {
         None => Check::fail(
             name,
             format!(
-                "{RULE_PATH} is not installed, so the mouse nodes and /dev/uinput get no uaccess ACL"
+                "{} is not installed, so the mouse nodes and /dev/uinput get no uaccess ACL",
+                RULE_PATHS.join(" or ")
             ),
             REINSTALL_HINT,
         ),
-        Some(text) if normalized(text) == normalized(shipped) => Check::pass(
+        Some((path, text)) if normalized(text) == normalized(shipped) => Check::pass(
             name,
-            format!("{RULE_PATH} is installed and matches the shipped rule"),
+            format!("{path} is installed and matches the shipped rule"),
         ),
-        Some(_) => Check::warn(
+        Some((path, _)) => Check::warn(
             name,
-            format!("{RULE_PATH} differs from dist/70-magic-driver.rules of this version"),
+            format!("{path} differs from dist/70-magic-driver.rules of this version"),
             REINSTALL_HINT,
         ),
     }
@@ -171,10 +177,10 @@ pub fn acl(label: &str, path: &Path, node: &NodeAcl, user: &str, need_write: boo
     }
 }
 
-pub fn uinput(dev_exists: bool, module_loaded: bool, modules_load: Option<&str>) -> Check {
+pub fn uinput(dev_exists: bool, module_loaded: bool, modules_load: Option<(&str, &str)>) -> Check {
     let name = "uinput module";
     let loads_on_boot =
-        modules_load.is_some_and(|text| text.lines().any(|line| line.trim() == "uinput"));
+        modules_load.filter(|(_, text)| text.lines().any(|line| line.trim() == "uinput"));
     if !dev_exists {
         return Check::fail(
             name,
@@ -187,17 +193,19 @@ pub fn uinput(dev_exists: bool, module_loaded: bool, modules_load: Option<&str>)
     } else {
         "available as a static node, loads on first use"
     };
-    if loads_on_boot {
-        Check::pass(
+    match loads_on_boot {
+        Some((path, _)) => Check::pass(
             name,
-            format!("/dev/uinput exists ({state}) and {MODULES_LOAD_PATH} loads it on boot"),
-        )
-    } else {
-        Check::warn(
+            format!("/dev/uinput exists ({state}) and {path} loads it on boot"),
+        ),
+        None => Check::warn(
             name,
-            format!("/dev/uinput exists ({state}) but {MODULES_LOAD_PATH} is missing"),
+            format!(
+                "/dev/uinput exists ({state}) but neither {} loads it on boot",
+                MODULES_LOAD_PATHS.join(" nor ")
+            ),
             REINSTALL_HINT,
-        )
+        ),
     }
 }
 

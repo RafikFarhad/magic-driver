@@ -1,0 +1,63 @@
+pkgname=magic-driver-git
+_name=magic-driver
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
+pkgdesc='User-space multi-touch driver for the Apple Magic Mouse 2 on KDE Plasma Wayland'
+arch=('x86_64')
+url='https://github.com/RafikFarhad/magic-driver'
+license=('GPL-3.0-or-later')
+depends=('gcc-libs' 'glibc' 'systemd-libs')
+makedepends=('cargo' 'git')
+optdepends=(
+  'fontconfig: text in the magic-driver-inspector window'
+  'libglvnd: OpenGL for the magic-driver-inspector window'
+  'libxkbcommon: keyboard input in the magic-driver-inspector window'
+  'wayland: magic-driver-inspector window on Wayland'
+)
+provides=("$_name")
+conflicts=("$_name")
+install="$_name.install"
+source=("$_name::git+${MAGIC_DRIVER_SOURCE:-https://github.com/RafikFarhad/magic-driver.git}")
+sha256sums=('SKIP')
+options=('!lto')
+
+pkgver() {
+  cd "$_name"
+  local version
+  version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+  printf '%s.r%s.g%s' "$version" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  cd "$_name"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc --print host-tuple)"
+}
+
+build() {
+  cd "$_name"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release -p magic-driver -p magic-driver-inspector
+}
+
+check() {
+  cd "$_name"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo test --frozen --workspace
+}
+
+package() {
+  cd "$_name"
+  install -Dm0755 target/release/magic-driver "$pkgdir/usr/bin/magic-driver"
+  install -Dm0755 target/release/magic-driver-inspector "$pkgdir/usr/bin/magic-driver-inspector"
+  install -Dm0644 dist/70-magic-driver.rules "$pkgdir/usr/lib/udev/rules.d/70-magic-driver.rules"
+  install -Dm0644 dist/modules-load.d/magic-driver.conf "$pkgdir/usr/lib/modules-load.d/magic-driver.conf"
+  sed 's#/usr/local/bin/#/usr/bin/#g' dist/magic-driver.service > magic-driver.service
+  install -Dm0644 magic-driver.service "$pkgdir/usr/lib/systemd/user/magic-driver.service"
+  install -Dm0644 dist/config.example.toml "$pkgdir/usr/share/doc/$_name/config.example.toml"
+  install -Dm0644 README.md "$pkgdir/usr/share/doc/$_name/README.md"
+  install -Dm0644 docs/install.md "$pkgdir/usr/share/doc/$_name/install.md"
+  install -Dm0644 docs/inspector.md "$pkgdir/usr/share/doc/$_name/inspector.md"
+}
