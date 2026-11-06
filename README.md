@@ -8,7 +8,16 @@ Early, personal project. It is tested on one machine with one mouse.
 
 ## Install
 
+```sh
+git clone https://github.com/RafikFarhad/magic-driver.git
+cd magic-driver
+```
+
 On Arch Linux, build the package from `packaging/arch/PKGBUILD` (see `docs/install.md`, section "Arch Linux package"). Anywhere else, use `scripts/install.sh` as described in `docs/install.md`. The optional diagnostic window is described in `docs/inspector.md`.
+
+## Contributing
+
+Read `AGENTS.md` first, whether you are a person or an agent. It explains the layout, the commands, and the safety rules that keep your own mouse and desktop out of the test suite. Issues and pull requests go to https://github.com/RafikFarhad/magic-driver.
 
 ## License
 
