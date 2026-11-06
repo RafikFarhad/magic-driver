@@ -1,3 +1,6 @@
 target/
 *.snap.new
 *.pending-snap
+/docs/PRD.md
+/docs/ARCHITECTURE.md
+/docs/epics/
