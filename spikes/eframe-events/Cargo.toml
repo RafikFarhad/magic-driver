@@ -1,8 +1,9 @@
 [package]
 name = "eframe-events"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+eframe = { version = "0.37", default-features = false, features = ["system_fonts", "glow", "wayland", "x11"] }
